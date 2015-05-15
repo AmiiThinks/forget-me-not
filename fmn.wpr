@@ -1,0 +1,24 @@
+#!wing
+#!version=5.0
+##################################################################
+# Wing IDE project file                                          #
+##################################################################
+[project attributes]
+proj.file-list = [loc('datasets.py'),
+                  loc('environments.py'),
+                  loc('experiment.py'),
+                  loc('features.py'),
+                  loc('fmn.wpr'),
+                  loc('helpers.py'),
+                  loc('jobs.py'),
+                  loc('learners.py'),
+                  loc('LICENSE'),
+                  loc('local.py'),
+                  loc('README.md'),
+                  loc('sensors.py'),
+                  loc('test_models.py'),
+                  loc('test_ptl.py')]
+proj.file-type = 'shared'
+testing.auto-test-file-specs = (('glob',
+                                 'test_'),)
+testing.test-framework = {None: 'nose'}
