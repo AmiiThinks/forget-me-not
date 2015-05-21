@@ -9,6 +9,48 @@ import pandas as pd
 import numpy as np
 from contextlib import suppress
 from collections import defaultdict
+
+
+#############################################
+## Math utilities
+#############################################
+
+def mscb(t):
+    """
+    Find the index of the most significant change bit,
+    the bit that will change when t is incremented
+    aka the power of 2 boundary we are at
+
+    >>> mscb(0)
+    0
+    >>> mscb(1)
+    1
+    >>> mscb(7)
+    3
+    >>> mscb(8)
+    0
+    """
+    return int(np.log2(t ^ (t + 1)))
+
+def log_sum_exp(*args):
+    """
+    Calculate the log of the sum of exponentials of the vector elements.
+
+    Use the shifting trick to minimize numerical precision errors.
+
+    similar to np.logaddexp(x1, x2) but takes a arbitrary number of elements.
+
+    >>> log_sum_exp(np.log(0.5), np.log(0.5))
+    0.0
+    >>> approx(np.exp(log_sum_exp(np.log(0.001), np.log(0.009), np.log(0.3))), .31)
+    True
+    """
+    m = max(args)
+    vals = np.array(args) - m
+    return m + np.log(sum(np.exp(vals)))
+
+
+
 ############################################
 ## Set operatiosn
 ##
@@ -477,7 +519,7 @@ def get_counts(results, true_labels):
 ## Little functions that make running tests easier
 ##
 ############################################
-def approx(num1, num2, m=4):
+def approx(num1, num2, m=4, precision=None):
     """
     Returns true if num1 and num2 are within a sliver of a floating point
     m gives the multplier on the floating point precision
@@ -486,7 +528,15 @@ def approx(num1, num2, m=4):
     False
     >>> approx(np.exp(np.log(.1)), .1)
     True
+    >>> approx(0.02, 0.01, precision=2)
+    False
+    >>> approx(0.02, 0.01, precision=1)
+    True
+    >>> approx(-0.02, -0.02, precision=1)
+    True
     """
+    if precision:
+        return abs(num1-num2) < 10**-precision
     return abs(num1-num2) <= m * np.spacing(1)
 
 def all_approx(l1, l2, m=4):
