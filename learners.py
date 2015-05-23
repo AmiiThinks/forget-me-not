@@ -17,6 +17,10 @@ class Model(metaclass=abc.ABCMeta):
         for s in seq:
             me.update(s)
         return me
+    
+    @classmethod
+    def log_predict(cls, seq, **kwargs):
+        return cls.from_sequence(seq, **kwargs).log_prob
 
     def __init__(self):
         self.reset()
@@ -52,223 +56,297 @@ class Model(metaclass=abc.ABCMeta):
         self.log_prob = 0.0
         self.num_steps = 0
 
-
+    
 class PTW(Model):
     """
     Will compute the PTW for the desired depth (and all the ones in between, because why not)
     Shares the model across all the relevant depths
     
-    >>> n = PTW(KTEstimator, depth=2)
-    >>> n.predict(0)
+    
+    
+    >>> p = PTW(KT, depth=2)
+    >>> p.predict(0)
     0.5
+    >>> p.predict(1)
+    0.5
+    
+    >>> exp(p.update(0))
+    0.5
+    >>> exp(p.completed_log_probs)
+    array([ 0.5,  1. ,  1. ])
+    >>> exp(p.log_prob)
+    0.5
+    
+    >>> approx(p.predict(0), 0.6875)
+    True
+    >>> approx(p.predict(1), 0.3125)
+    True
+    
+    >>> approx(exp(p.update(0)), 0.6875)
+    True
+    >>> exp(p.completed_log_probs)    
+    array([ 1.    ,  0.3125,  1.    ])
+    
+    >>> p = PTW(KT, depth=5)
+    >>> p.log_predict(0) == p.update(0)
+    True
+    >>> print(p.get_child_string(), '  ', p.get_model_string()) # 0
+    PTW^0    KT(0:0)
+
+    >>> p.log_predict(0) == p.update(0)
+    True
+    >>> print(p.get_child_string(), '  ', p.get_model_string()) # 1
+    PTW^1    KT(0:1)
+
+    >>> p.log_predict(0) == p.update(0)
+    True
+    >>> print(p.get_child_string(), '  ', p.get_model_string()) # 2
+    PTW^1 PTW^0    KT(0:2) KT(2:2)
+
+    >>> p.log_predict(0) == p.update(0)
+    True
+    >>> print(p.get_child_string(), '  ', p.get_model_string()) # 3
+    PTW^2    KT(0:3)
+
+    >>> p.log_predict(0) == p.update(0)
+    True
+    >>> print(p.get_child_string(), '  ', p.get_model_string()) # 4
+    PTW^2 PTW^0    KT(0:4) KT(4:4)
+
+    >>> p.log_predict(0) == p.update(0)
+    True
+    >>> print(p.get_child_string(), '  ', p.get_model_string()) # 5
+    PTW^2 PTW^1    KT(0:5) KT(4:5)
+
+    >>> p.log_predict(0) == p.update(0)
+    True
+    >>> print(p.get_child_string(), '  ', p.get_model_string()) # 6
+    PTW^2 PTW^1 PTW^0    KT(0:6) KT(4:6) KT(6:6)
+
+    >>> p.log_predict(0) == p.update(0)
+    True
+    >>> print(p.get_child_string(), '  ', p.get_model_string()) # 7
+    PTW^3    KT(0:7)
+
+    >>> p.log_predict(0) == p.update(0)
+    True
+    >>> print(p.get_child_string(), '  ', p.get_model_string()) # 8
+    PTW^3 PTW^0    KT(0:8) KT(8:8)
     """
     
     def __init__(self, model_factory, depth=1, deepest=0):
         """
-        Initializes a node with no children for the specified depth.
-        
-        >>> n = PTW(KTEstimator, 4)
-        >>> print(n.child)
-        None
-        >>> n.max_steps
+        >>> p = PTW(KT, 4)
+        >>> p.max_steps
         16
-        >>> n.log_prob
+        >>> p.log_prob
         0.0
-        >>> n.predict(0)
+        >>> p.predict(0)
         0.5
-        >>> n.predict(1)
+        >>> p.predict(1)
         0.5
         """
         self.Model = model_factory
         self.depth = depth
         self.deepest = deepest
+        self.max_steps = 2**self.depth
 
         self.log_prob = 0.0
         self.num_steps = 0
-        self.completed_nodes = {} # completed nodes are indexed by depth
-        self.models = {} # models are indexed by starting timestep, 
+        self.models = {0: self.Model()} # models are indexed by starting timestep, 
+        self.model_log_probs = {0: 0} # ditto
+        
+        self.completed_log_probs = [0 for _ in range(self.depth+1)]
+        if self.deepest != 0:
+            raise NotImplementedError("Oops, not there yet")
         
     def __repr__(self):
         # TODO: update this when we can pass histories
         return "<PTW^{}_{}(0:{})>".format(self.depth, self.Model.__name__,
-                                         self.num_steps - 1)
+                                         self.num_steps-1)
     
+    def to_string(self, depth=None, t=None):
+        """
+        Construct a string representation of the partition log_prob at the 
+        given depth and time (default to full tree and current time)
+        
+        >>> p = PTW(KT, depth=12)
+        >>> print(p.to_string())
+        PTW^12(0:-1)
+        
+        >>> print(p.to_string(t=10))
+        PTW^12(0:10)
+
+        >>> print(p.to_string(depth=5, t=100))
+        PTW^5(96:100)
+        """
+        if depth is None:
+            depth = self.depth
+        if t is None:
+            t = self.num_steps - 1
+        if t < 0:
+            start = 0
+        else:
+            start = binary_boundary(t, depth)
+        return "PTW^{}({}:{})".format(depth, start, t)
+
+    def get_child_string(self):
+        """
+        Return a string representation of the current completed subtrees
+
+        >>> p = PTW(KT, depth=4)
+        >>> for _ in range(4): d = p.update(0)
+        >>> print(p.get_child_string())
+        PTW^2
+        >>> d = p.update(0); print(p.get_child_string())
+        PTW^2 PTW^0
+        >>> d = p.update(0); print(p.get_child_string())
+        PTW^2 PTW^1
+        >>> d = p.update(0); print(p.get_child_string())
+        PTW^2 PTW^1 PTW^0
+        >>> d = p.update(0); print(p.get_child_string())
+        PTW^3
+        """
+        p = "PTW^{}"
+        
+        if self.num_steps == self.max_steps:
+            return p.format(self.depth)
+
+        return " ".join([p.format(i) for i in range(self.depth-1, -1,-1) \
+                         if self.completed_log_probs[i] != 0.0])        
     
-    def __str__(self):
-        return "PTW^{}({}:{})".format(self.depth, 
-                                      self.offset, self.num_steps + self.offset - 1)
-   
+    def get_model_string(self):
+        """
+        Return a string representation of the currently-stored models
+
+        >>> p = PTW(KT, depth=4)
+        >>> print(p.get_model_string())
+        KT(0:-1)
+        >>> d = p.update(0); print(p.get_model_string())
+        KT(0:0)
+        >>> d = p.update(0); print(p.get_model_string())
+        KT(0:1)
+        >>> d = p.update(0); print(p.get_model_string())
+        KT(0:2) KT(2:2)
+        >>> d = p.update(0); print(p.get_model_string())
+        KT(0:3)
+        >>> for _ in range(3): d = p.update(0)
+        >>> print(p.get_model_string())
+        KT(0:6) KT(4:6) KT(6:6)
+        """
+        return " ".join(["{}({}:{})".format(self.Model.__name__,
+                                           k, self.num_steps-1) for k in sorted(self.models)])
+            
+        
+    @property
+    def at_deepest(self):
+        """
+        Check if our current timestep is on the smallest splitpoint we care about
+        """
+        return at_partition_start(self.num_steps, self.deepest+1)
+    
+    @property
+    def mscb(self):
+        return mscb(self.num_steps)
+
+    def update(self, sym):
+        """
+        >>> n = PTW(KT)
+        >>> exp(n.update(0))
+        0.5
+        >>> exp(n.model_log_probs[0])
+        0.5
+        >>> exp(n.completed_log_probs)
+        array([ 0.5,  1. ])
+        >>> exp(n.update(0))
+        0.625
+        >>> exp(n.completed_log_probs)
+        array([ 1.    ,  0.3125])
+        >>> exp(n.update(0))
+        Traceback (most recent call last):
+        ...
+        ValueError: Timestep 2 exceeds max for <PTW^1_KT(0:1)>
+
+        """
+        if self.num_steps >= self.max_steps:
+            msg = "Timestep {} exceeds max for {!r}".format(self.num_steps, self)
+            raise ValueError(msg)
+        
+        # figure out which depths have been completed
+        cur_bound = self.mscb
+        # store this so we can report the change
+        cur_prob = self.log_prob
+        
+    
+        # for now we can make this on every step even though technically we don't need it
+        # every time
+        self.model_log_probs[self.num_steps] = 0
+        self.models[self.num_steps] = self.Model()
+
+        # update the models
+        for m in self.models:
+            self.model_log_probs[m] += self.models[m].update(sym)
+
+        part = self.model_log_probs[self.num_steps]
+        complete = part
+        # now walk up the partition calculation
+        for i in range(1, self.depth + 1):
+            d = i
+            m = binary_boundary(self.num_steps, d)
+            part = log_0_5 + log_sum_exp(self.model_log_probs[m], 
+                                         self.completed_log_probs[i-1] + part)
+            if i == cur_bound:
+                complete = part
+  
+        # store the root value
+        self.log_prob = part #self.partial_log_probs[-1]
+
+        # this is where we might need to increase the depth
+        # clear out the completed probs you're done using
+        self.completed_log_probs[cur_bound] = complete
+        for i in range(cur_bound):
+            self.completed_log_probs[i] = 0
+            m = binary_boundary(self.num_steps, i)
+            if m != binary_boundary(self.num_steps, i+1):
+                del self.models[m]
+                del self.model_log_probs[m]
+        
+        self.num_steps += 1
+    
+        return self.log_prob - cur_prob
+
+
     def log_predict(self, sym):
         """
+        Figure out the conditional probability by faking the predicted sequence and 
+        return the change in log_prob
+
         Return the log prediction under the current model 
         
-        >>> n = PTW(KTEstimator, depth=4)
+        >>> n = PTW(KT, depth=4)
         >>> n.log_predict(0) == log(0.5)
         True
         >>> n.predict(0)
         0.5
         
-        >>> n2 = PTW(KTEstimator, depth=4)
+        >>> n2 = PTW(KT, depth=4)
         >>> exp(n2.update(0))
         0.5
         
-        >>> n2.predict(0) - n.predict(0) == n.log_prob
+        >>> n.log_predict(0) == n.update(0)
         True
-        >>> n.update(0) == n.predict(0)
-        True
-
-        >>> n.update(0) == n.predict(0)
+        >>> n.log_predict(0) == n.update(0)
         True
         """
-        model_preds = {k: v[model]}
-        
-        if self.child is None:
-            partition_loss = self.Model().log_predict(sym) + self.completed_child
-        else:
-            partition_loss = self.child.log_predict(sym) + self.child.log_prob
-            partition_loss = self.child.depth_correction(self.depth-1, 
-                                                         model_prob=model_prob,
-                                                         loss=partition_loss)
-                                                     
-        loss = log_0_5 + log_sum_exp(model_prob, partition_loss)
-        
-        return loss - self.log_prob
-         
-    def update(self, sym):
-        """
-        Update to account for the given symbol, spawning and retiring 
-        children as necessary.
-        Return the conditional probability of the update
-        
-        >>> n = PTW(KTEstimator)
-        >>> n.max_steps
-        2
-        >>> exp(n.update(0))
-        0.5
-        >>> exp(n.update(0))
-        0.625
-        >>> exp(n.update(0))
-        Traceback (most recent call last):
-        ...
-        ValueError: Timestep 2 exceeds max for <PTW^1_KTEstimator(0:1)>
+        pred = self.Model().log_predict(sym)
+        for i in range(1, self.depth+1):
+            m = binary_boundary(self.num_steps, i)
+            model_pred = self.models.get(m, self.Model()).log_predict(sym) + \
+                self.model_log_probs.get(m, 0)
+            part = pred + self.completed_log_probs[i-1]
+            pred = log_0_5 + log_sum_exp(model_pred, part)
+        return pred - self.log_prob
 
-        >>> n = PTW(KTEstimator, depth=4)
-        >>> n.max_steps
-        16
-        >>> n.get_child_string()
-        'PTW^4(0:-1)'
-        >>> approx(exp(n.update(0)), 0.5)
-        True
-        >>> n.get_child_string()
-        'PTW^4(0:0) PTW^1(0:0)'
-        """
-        if self.at_boundary:
-            msg = "Timestep {} exceeds max for {!r}".format(self.num_steps, self)
-            raise ValueError(msg)
-        if self.depth == 0:
-            print("You shouldn't be here")
-            return self.Model().log_predict(sym)
-        
-        old_loss = self.log_prob        
-        self.update_model(sym)
-        
-        # if we're depth 1 we don't need to spawn a child, we can do the bookkeeping here
-        if self.depth==1:
-            partial_child = self.Model().log_predict(sym)
-        else:
-            # spawn a child if you need one
-            if self.child is None:
-                self.child = PTW(self.Model, 1, offset=self.num_steps + self.offset)
-            # now update your child
-            self.child.update(sym)
-            
-            # if it's done but we still need it give it a promotion
-            if self.child.at_boundary and self.child.depth < self.depth-1:
-                self.child.promote()
-                # when it is promoted it recomputes its log_prob for the new depth
-
-            # make sure it is the correct loss for the depth you need
-            partial_child = self.child.depth_correction(self.depth-1)
-
-            # now you have P^(d-1)(a:b)
-            # if you have a completed_child, it will be P^(d-1)(2^(d-1):t)
-            # otherwise it will be your first child P^(d-1)(0:t)
-
-        # compute your own partition loss
-        self.log_prob = log_0_5 + log_sum_exp(self.model_prob,
-                                                self.completed_child + partial_child)
-
-        self.num_steps += 1
-        # check if you need to store things and start a fresh child
-        if self.at_half:
-            self.completed_child = partial_child
-            self.child = None
-        elif self.at_boundary:
-            self.child = None
-            
-        delta = self.log_prob - old_loss
-        return delta    
-    
-    def depth_correction(self, depth, loss=None, model_prob=None):
-        """
-        Loop over the update to adjust for depth. By default use current log_prob, model_prob
-        but for predicting might want to pass hypotheticals
-        """
-        if loss is None:
-            loss = self.log_prob
-        if model_prob is None:
-            model_prob = self.model_prob
-
-        if loss == model_prob:
-            return loss
-        else:
-            for _ in range(depth-self.depth):
-                loss = log_0_5 + log_sum_exp(model_prob, loss)
-        return loss
-            
-    
-    def update_model(self, sym):
-        self.model_prob += self.model.update(sym)
-        return self.model_prob
-    
-    @property
-    def at_boundary(self):
-        """
-        Return true if you have completed your partition
-        """
-        return self.num_steps == self.max_steps
-    
-    @property
-    def at_half(self):
-        """
-        Return true if the current timestep completes your first half
-        """
-        return self.num_steps == self.half_steps
-    
-    def promote(self):
-        """
-        Increase the depth you can handle: increment depth, and reset max,
-        store the completed loss (your previous total), 
-        keep the model, should be childless
-        """
-        self.depth += 1
-        self.half_steps, self.max_steps = self.max_steps, self.max_steps * 2
-        self.completed_child = self.log_prob
-        # correct your total loss for the new depth
-        self.log_prob = log_0_5 + log_sum_exp(self.model_prob, self.completed_child)
-        self.child = None
- 
-    def get_child_string(self):
-        info = str(self)        
-        with suppress(AttributeError):
-            info += " " + self.child.get_child_string()
-        return info
-    
-    def get_leaf(self):
-        if self.child is None:
-            return self
-        else:
-            return self.child.get_leaf()
 
 class PTWStack(Model):
     """
@@ -372,7 +450,7 @@ class PTWStack(Model):
                                         -completed_child - partial_loss])		
 
 
-class KTEstimator(Model):
+class KT(Model):
     """
     A simple Krichevsky–Trofimov estimator
     #TODO: check if it's okay to generalize this
@@ -382,7 +460,7 @@ class KTEstimator(Model):
         """
         Create, by default, a 0/1 KT estimator
 
-        >>> kt = KTEstimator()
+        >>> kt = KT()
         >>> kt.predict(1)
         0.5
         >>> kt.predict(0)
@@ -398,7 +476,7 @@ class KTEstimator(Model):
 
     def update(self, data):
         """
-        >>> kt = KTEstimator()
+        >>> kt = KT()
         >>> kt.counts[0]
         0.5
         >>> l = kt.update(0)
@@ -414,7 +492,7 @@ class KTEstimator(Model):
 
     def log_predict(self, x):
         """
-        >>> kt = KTEstimator()
+        >>> kt = KT()
         >>> kt.predict(0)
         0.5
         >>> exp(kt.log_predict(0))
@@ -428,7 +506,7 @@ class KTEstimator(Model):
 
     def loss(self, sym):
         """
-        >>> kt = KTEstimator()
+        >>> kt = KT()
         >>> exp(kt.loss(1))
         0.5
         >>> kt.loss(0) == kt.loss(1)
@@ -445,6 +523,18 @@ if __name__ == "__main__":
     doctest.testmod(verbose=False)
     print("Done!")
     
-    p = PTW(KTEstimator, 5)
+    p = PTW(KT, 12)
+    import model
+    m = model.PTW(12)
     for i in range(32):
-        p.update(0)
+        assert approx(p.predict(0), m.predict(0))
+        #print("Prediction", p.predict(0), "|", m.predict(0))
+        d = p.update(0);
+        dm = m.update(0);
+        #print("Update", d, exp(d), "|", dm, exp(dm))
+        #print("Completed", p.completed_log_probs, exp(p.completed_log_probs))
+        #print("Partial", p.partial_log_probs, exp(p.partial_log_probs))
+        #print("Models", p.model_log_probs)
+        
+    print("DONE!")
+        

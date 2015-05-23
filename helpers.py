@@ -15,6 +15,60 @@ from collections import defaultdict
 ## Math utilities
 #############################################
 
+def binary_boundary(t, d):
+    """
+    Return the last <t integer that is a multiple of 2^d
+    
+    >>> binary_boundary(11, 4)
+    0
+    >>> binary_boundary(11, 3)
+    8
+    >>> binary_boundary(11, 2)
+    8
+    >>> binary_boundary(11, 1)
+    10
+    
+    >>> binary_boundary(15, 4)
+    0
+    >>> binary_boundary(16, 4)
+    16
+    >>> binary_boundary(15, 3)
+    8
+    >>> binary_boundary(15, 2)
+    12
+    >>> binary_boundary(15, 1)
+    14
+    """
+    return t - (t & ((1<<d) - 1))
+
+def at_partition_start(t, d):
+    """
+    Return True if t represents the beginning of a binary partition of depth d
+    
+    >>> at_partition_start(0, 0)
+    True
+    >>> at_partition_start(0, 1)
+    True
+    >>> at_partition_start(0, 34)
+    True
+    
+
+    >>> at_partition_start(0, 1)
+    True
+    >>> at_partition_start(1, 1)
+    False
+    >>> at_partition_start(2, 1)
+    True
+    
+    >>> at_partition_start(8, 2)
+    True
+    >>> at_partition_start(8, 3)
+    True
+    >>> at_partition_start(8, 4)
+    False
+    """
+    return not(t & ((1<<d) - 1))
+
 def mscb(t):
     """
     Find the index of the most significant change bit,
@@ -30,7 +84,7 @@ def mscb(t):
     >>> mscb(8)
     0
     """
-    return int(np.log2(t ^ (t + 1)))
+    return (t^(t+1)).bit_length()-1
 
 def log_sum_exp(*args):
     """

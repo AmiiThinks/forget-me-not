@@ -2,161 +2,98 @@ import unittest
 from learners import *
 import model
 
+
+kt_vals = {i: log(i+.5) - log(i+1) for i in range(32)}
+
 def test_partition_bounds():
-    p = PTW(KTEstimator, depth=4)
-    assert p.get_child_string() == "PTW^4(0:-1)"
+    p = PTW(KT, depth=4)
+    assert p.get_child_string() == ""
     p.update(0) 
-    assert p.get_child_string() == "PTW^4(0:0) PTW^1(0:0)"
+    assert p.get_child_string() == "PTW^0"
     assert p.log_prob == log(0.5)
-    assert p.child.log_prob == log(0.5)
-    assert p.child.completed_child == log(0.5)
+
     p.update(0)
-    assert p.get_child_string() == "PTW^4(0:1) PTW^2(0:1)"
-    assert p.completed_child == 0.0
-    assert p.child.completed_child != 0.0
+    assert p.get_child_string() == "PTW^1"
+    assert p.completed_log_probs[0] == 0.0
+    assert p.completed_log_probs[1] != 0.0
+
     p.update(0)
-    assert p.get_child_string() == "PTW^4(0:2) PTW^2(0:2) PTW^1(2:2)"
-    assert p.child.child.completed_child == log(0.5)
+    assert p.get_child_string() == "PTW^1 PTW^0"
     p.update(0)
-    assert p.get_child_string() == "PTW^4(0:3) PTW^3(0:3)"
-    assert p.completed_child == 0.0
-    assert p.child.completed_child != 0.0
-    assert p.child.child == None
+    assert p.get_child_string() == "PTW^2"
     p.update(0)
-    assert p.get_child_string() == "PTW^4(0:4) PTW^3(0:4) PTW^1(4:4)"
+    assert p.get_child_string() == "PTW^2 PTW^0"
     p.update(0)
-    assert p.get_child_string() == "PTW^4(0:5) PTW^3(0:5) PTW^2(4:5)"
+    assert p.get_child_string() == "PTW^2 PTW^1"
     p.update(0)
-    assert p.get_child_string() == "PTW^4(0:6) PTW^3(0:6) PTW^2(4:6) PTW^1(6:6)"
+    assert p.get_child_string() == "PTW^2 PTW^1 PTW^0"
     p.update(0)
-    print(p.get_child_string())
-    assert p.get_child_string() == "PTW^4(0:7)"
+    assert p.get_child_string() == "PTW^3"
     p.update(0)
-    print(p.get_child_string())
-    assert p.get_child_string() == "PTW^4(0:8) PTW^1(8:8)"
+    assert p.get_child_string() == "PTW^3 PTW^0"
     p.update(0)
-    print(p.get_child_string())
-    assert p.get_child_string() == "PTW^4(0:9) PTW^2(8:9)"
+    assert p.get_child_string() == "PTW^3 PTW^1"
     p.update(0)
-    print(p.get_child_string())
-    assert p.get_child_string() == "PTW^4(0:10) PTW^2(8:10) PTW^1(10:10)"
+    assert p.get_child_string() == "PTW^3 PTW^1 PTW^0"
     p.update(0)
-    print(p.get_child_string())
-    assert p.get_child_string() == "PTW^4(0:11) PTW^3(8:11)"
+    assert p.get_child_string() == "PTW^3 PTW^2"
     p.update(0)
-    print(p.get_child_string())
-    assert p.get_child_string() == "PTW^4(0:12) PTW^3(8:12) PTW^1(12:12)"
+    assert p.get_child_string() == "PTW^3 PTW^2 PTW^0"
     p.update(0)
-    print(p.get_child_string())
-    assert p.get_child_string() == "PTW^4(0:13) PTW^3(8:13) PTW^2(12:13)"
+    assert p.get_child_string() == "PTW^3 PTW^2 PTW^1"
     p.update(0)
-    print(p.get_child_string())
-    assert p.get_child_string() == "PTW^4(0:14) PTW^3(8:14) PTW^2(12:14) PTW^1(14:14)"
+    assert p.get_child_string() == "PTW^3 PTW^2 PTW^1 PTW^0"
     p.update(0)
-    print(p.get_child_string())
-    assert p.get_child_string() == "PTW^4(0:15)"
+    assert p.get_child_string() == "PTW^4"
     try:
         p.update(0)
         assert False
     except ValueError:
         assert True
 
-def test_deep_partitions():
-    p = PTW(KTEstimator, depth=8)
-    assert p.get_child_string() == "PTW^8(0:-1)"
-    p.update(0) 
-    assert p.get_child_string() == "PTW^8(0:0) PTW^1(0:0)"
-    p.update(0)
-    assert p.get_child_string() == "PTW^8(0:1) PTW^2(0:1)"
-    p.update(0)
-    assert p.get_child_string() == "PTW^8(0:2) PTW^2(0:2) PTW^1(2:2)"
-    p.update(0)
-    assert p.get_child_string() == "PTW^8(0:3) PTW^3(0:3)"
-    assert p.predict(0) > p.child.predict(0)
-    p.update(0)
-    assert p.get_child_string() == "PTW^8(0:4) PTW^3(0:4) PTW^1(4:4)"
-    p.update(0)
-    assert p.get_child_string() == "PTW^8(0:5) PTW^3(0:5) PTW^2(4:5)"
-    p.update(0)
-    assert p.get_child_string() == "PTW^8(0:6) PTW^3(0:6) PTW^2(4:6) PTW^1(6:6)"
-    p.update(0)
-    assert p.get_child_string() == "PTW^8(0:7) PTW^4(0:7)"
 
 def test_depth_differences():
-    p2 = PTW(KTEstimator, depth=2)
-    p4 = PTW(KTEstimator, depth=4)
-    p8 = PTW(KTEstimator, depth=8)
+    p2 = PTW(KT, depth=2)
+    p4 = PTW(KT, depth=4)
+    p8 = PTW(KT, depth=8)
 
     # greater depth means greater resistance to splitting
     for _ in range(2):
         p2.update(0); p4.update(0); p8.update(0)
     assert p2.total_loss > p4.total_loss
     assert p4.total_loss > p8.total_loss
-    assert p8.total_loss > -p8.model_prob
+    assert p8.total_loss > -p8.model_log_probs[0]
     for _ in range(2):
         p2.update(0); p4.update(0); p8.update(0)
     assert p2.total_loss > p4.total_loss
     assert p4.total_loss > p8.total_loss
-    assert p8.total_loss > -p8.model_prob
+    assert p8.total_loss > -p8.model_log_probs[0]
 
     # but our internal nodes are similar
-    assert p4.log_prob == p2.depth_correction(4)
-    assert p4.child.log_prob == p2.depth_correction(p4.child.depth)
-    assert p4.child.total_loss == p8.child.total_loss
+    assert p2.log_prob == p4.completed_log_probs[2]
 
     for _ in range(4):
         p4.update(0); p8.update(0)
     assert p4.total_loss > p8.total_loss
-    assert p8.total_loss > -p8.model_prob
-    assert p8.log_prob == p4.depth_correction(8)
-    
-    
+    assert p8.total_loss > -p8.model_log_probs[0]
+    assert p4.completed_log_probs[4] == p8.completed_log_probs[4]
 
 def test_setup():
-    pt = PTW(KTEstimator, depth=2)
+    pt = PTW(KT, depth=2)
     assert pt.predict(0) == 0.5
     assert pt.predict(1) == 0.5
 
-def test_first_steps():
-    p = PTW(KTEstimator, depth=1)
-    assert p.predict(0) == 0.5
-    assert np.exp(p.update(0)) == 0.5
-    assert p.num_steps == 1
-    assert np.exp(p.log_prob) == 0.5
-    assert np.exp(p.completed_child) == 0.5
-    assert np.exp(p.model_prob) == 0.5
-    assert p.child is None
-
-    first_loss = p.log_prob
-    pred = p.update(0)
-    second_loss = p.log_prob
-    assert second_loss - first_loss == pred
-
-def test_interesting_points():
-    p = PTW(KTEstimator, depth=12)
-    assert approx(p.predict(0) + p.predict(1), 1)
-    for _ in range(32):
-        p.update(0)
-    assert approx(p.predict(0) + p.predict(1), 1)
-    assert p.predict(0) > p.predict(1)
-    p.update(1)
-    assert p.num_steps == 33
-    assert p.child is not None
-    for _ in range(30):
-        p.update(1)
-    assert p.predict(1) > p.model.predict(1)
-
 
 def test_first_steps_depth():
-    p = PTW(KTEstimator, depth=5)
+    p = PTW(KT, depth=5)
     p.update(0)
     assert p.log_prob == log(0.5)
-    assert p.model.predict(0) == 0.75
+    assert p.models[0].predict(0) == 0.75
     assert p.predict(0) < 0.75
 
 def test_prob_sum():
     # probabilities of a discrete alphabet should sum to one
-    p = PTW(KTEstimator, depth=12)
+    p = PTW(KT, depth=12)
     assert approx(p.predict(0) + p.predict(1), 1)
     p.update(0)
     assert approx(p.predict(0) + p.predict(1), 1)
@@ -168,11 +105,10 @@ def test_prob_sum():
 def test_model_update():
     # the total loss having seen a symbol should equal the loss for predicting
     # the signal
-    pt = PTW(KTEstimator, depth=12)
+    pt = PTW(KT, depth=12)
     mpt = model.PTW(12, model.KT)
     for i in range(16):
-        print(i)
-        assert mpt.log_predict(0) == pt.log_predict(0)
+        assert approx(mpt.log_predict(0), pt.log_predict(0))
         assert mpt.log_predict(0) == mpt.update(0)
         assert pt.log_predict(0) == pt.update(0)
 
@@ -180,7 +116,7 @@ def test_model_update():
 def test_improved_model():
     # the probability of seeing a symbol should be greater once we've seen 
     # a symbol
-    pt = PTW(KTEstimator, depth=12)
+    pt = PTW(KT, depth=12)
     for _ in range(10):
         p0 = pt.predict(0)
         pt.update(0)
@@ -193,18 +129,18 @@ def test_improved_model():
 
 def test_ptw_cost():
     # there should be a small penalty to PTW if no switches have occurred
-    pt = PTW(KTEstimator, depth=5)
+    pt = PTW(KT, depth=5)
     mpt = model.PTW(5, Base=model.KT)
-    kt = KTEstimator()
+    kt = KT()
     pt.update(0); kt.update(0); mpt.update(0)
     for i in range(11):
         assert approx(pt.update(0), mpt.update(0))
         kt.update(0)
         print(i+1, pt.predict(0), kt.predict(0), mpt.predict(0))
-        assert pt.log_prob == mpt.log_prob
-        assert pt.model_prob == kt.log_prob
+        assert approx(pt.log_prob, mpt.log_prob)
+        assert pt.model_log_probs[0] == kt.log_prob
         assert mpt.predict(0) < kt.predict(0)
-        assert mpt.predict(0) == pt.predict(0)
+        assert approx(mpt.predict(0), pt.predict(0))
         assert pt.predict(0) < kt.predict(0)
         assert pt.predict(0) > pt.predict(1)
     assert approx(pt.predict(0) + pt.predict(1), 1)
@@ -220,7 +156,7 @@ def test_all_sequences_sum():
 def test_compare_kt():
     mKT = model.KT()
     m_loss = 0
-    aKT = KTEstimator()
+    aKT = KT()
     a_loss = 0
     for _ in range(16):
         m_loss += mKT.update(0)
@@ -230,9 +166,18 @@ def test_compare_kt():
     assert approx(mKT.predict(1), aKT.predict(1))
     assert approx(aKT.predict(0) + aKT.predict(1), 1)
 
+
+def test_compare_ptw_updates():
+    mPTW = model.PTW(13, Base=model.KT)
+    aPTW = PTW(KT, depth=13)
+    
+    for i in range(128):
+        print(i)
+        assert approx(mPTW.update(0), aPTW.update(0))
+
 def test_compare_ptw():
     mPTW = model.PTW(1, Base=model.KT)
-    aPTW = PTW(KTEstimator, depth=1)
+    aPTW = PTW(KT, depth=1)
     for _ in range(2):
         assert mPTW.predict(0) == aPTW.predict(0)
         assert mPTW.update(0) == aPTW.update(0)
@@ -243,7 +188,7 @@ def test_compare_ptw():
         assert True
     
     mPTW = model.PTW(2, Base=model.KT)
-    aPTW = PTW(KTEstimator, depth=2)
+    aPTW = PTW(KT, depth=2)
     for _ in range(4):
         assert mPTW.predict(0) == aPTW.predict(0)
         assert mPTW.update(0) == aPTW.update(0)
@@ -254,7 +199,7 @@ def test_compare_ptw():
         assert True
 
     mPTW = model.PTW(12, Base=model.KT)
-    aPTW = PTW(KTEstimator, depth=12)
+    aPTW = PTW(KT, depth=12)
     for _ in range(4):
         assert approx(mPTW.predict(0), aPTW.predict(0))
         assert approx(mPTW.update(0), aPTW.update(0))
@@ -265,11 +210,6 @@ def test_compare_ptw():
         assert approx(mPTW.update(0), aPTW.update(0))
     assert approx(mPTW.log_prob, aPTW.log_prob)
 
-    try:
-        aPTW.update(0)
-        assert False
-    except ValueError:
-        assert True
 
 
 
