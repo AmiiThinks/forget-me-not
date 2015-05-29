@@ -211,6 +211,14 @@ def test_compare_ptw():
     assert approx(mPTW.log_prob, aPTW.log_prob)
 
 
+def test_log_store():
+    mls = model.LogStore()
+    als = LogStore()
+    
+    for i in range(64):
+        mls.add(i)
+        als.add(i)
+        assert all([mls[j] == als[j] for j in range(len(mls))])
 
 
 

@@ -187,17 +187,6 @@ class DataSplitter(Structure):
             return (data, data)
 
 
-class PredictionExperiment(Experiment):
-    _fields = [Dir('base_dir', required=True, transient=True),
-               Struct('env', constructor=CoinEnv),
-               Struct('predictor', constructor=Learner),
-               Integer('seed', required=False),
-               Integer('length', required=True)
-               ]
-    
-    def __enter__(self):
-        self.env.set_inherited(instance=self)
-
 
 def sample_run():
     pass

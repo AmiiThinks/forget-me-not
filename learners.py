@@ -56,6 +56,49 @@ class Model(metaclass=abc.ABCMeta):
         self.log_prob = 0.0
         self.num_steps = 0
 
+
+class ModelStore(metaclass=abc.ABCMeta):
+    """
+    Abstract class for defining a storage mechanism
+    """
+    
+    def __init__(self):
+        self._items = []
+        self.t = 0
+    
+    def __len__(self):
+        return len(self._items)
+    
+    def __iter__(self):
+        for x in self._items:
+            yield x
+            
+    def __getitem__(self, i):
+        return self._items[i]
+    
+    def add(self, x):
+        """
+        This is where each model store defines its particular mechanism
+        """
+        self.t += 1
+    
+class LogStore(ModelStore):
+    """
+    Stores a log(t) number of objects, weighted towards more recent objects
+    
+    #TODO: allow >1 gaps between models
+    
+    >>> store = LogStore()
+    >>> for i in range(12):
+    ...     store.add(i)
+    >>> list(store)
+    [11, 10, 8, 0]
+    """
+    def add(self, x):
+        with suppress(IndexError):
+            self._items.pop(mscb(self.t))
+        self._items.insert(0, x)
+        self.t += 1
     
 class PTW(Model):
     """
@@ -348,106 +391,39 @@ class PTW(Model):
         return pred - self.log_prob
 
 
-class PTWStack(Model):
+class Averager(Model):
     """
-    Inspired by Mike's LogStore and PTW shenanigans
-    But doesn't correct appropriately for depth
-
+    Adapted from Mike's code, pretty exactly
+    
+    Requires a collection of models
     """
-    def __init__(self, model_factory, depth):
-        self.factory = model_factory
-        self.depth = depth
-        self.num_steps = 0
-        self._models = []
-        self._losses = []
+    def __init__(self, models):
+        self.models = models
+        self.reset()    
+    
+    def reset(self):
+        self.log_prob = 0
+        log1n = log(1.0/len(self.models))
+        self.models = {m: log1n for m in self.models}
 
     def update(self, sym):
-        """
-        Update each of the sub-models with the new symbol and 
-        calculate the resulting partition probabilities
-
-        If imaginary, will not actually do the updates, just calculate the
-        updated probability
-        """
-        model = self.factory()
-        model.update(sym)
-        new_loss = model.log_prob
-
-        # merge the models that have reached their endpoints
-        for _ in range(mscb(self.num_steps)):
-            model = self._models.pop()
-            model.update(sym)
-            model_prob = model.log_prob
-
-            completed_child = self._losses.pop()
-            new_loss = self.calculate_partition_loss(model_prob,
-                                                     completed_child, new_loss)
-        # update the remaining models (if any)
-        for m in self._models:
-            m.update(sym)
-
-        # append the new values
-        self._losses.append(new_loss)
-        self._models.append(model)
-        self.num_steps += 1
-
-    @property
-    def log_prob(self):
-        partial_loss = 0 # the base loss for an empty thing
-        # calculate the partition loss for each depth
-        for i in range(self.depth):
-            partial_loss = self.calculate_partition_loss(self.get_model(i+1).log_prob,
-                                                         self.get_loss(i), 
-                                                         partial_loss)
-        return partial_loss
-
-    def get_model(self, depth):
-        """
-        Return the model that looks up to 2**depth steps back
-        """
-        # probably should do something here for the empty list
-        try:
-            return self._models[-depth-1]
-        except IndexError:
-            pass
-        try:
-            return self._models[0]
-        except IndexError:
-            return self.factory()
-    
-    def get_loss(self, depth):
-        """
-        Return the value for the 2**depth completed subtree, if available. Otherwise 0.
-        """
-        try:
-            return self._losses[-depth-1]
-        except IndexError:
-            return 0
-
+        cur_prob = self.log_prob
+        
+        for m in self.models:
+            self.models[m] += m.update(sym)
+        self.log_prob = log_sum_exp(*self.models.values())
+        
     def log_predict(self, sym):
-        """
-        Return the log probability of the given symbol under the current
-        model
-        """
-        partial_loss = self.factory().log_predict(sym)
-        # calculate the partition loss for each depth
-        for i in range(self.depth):
-            model = self.get_model(i+1)
-            model_prob = model.log_predict(sym) + model.log_prob
-            partial_loss = self.calculate_partition_loss(model_prob,
-                                                         self.get_loss(i), 
-                                                         partial_loss)
-        return partial_loss - self.log_prob
+        return log_sum_exp(*(m.log_predict(sym) + \
+                             lp for m, lp in self.models.items()))
 
-    def calculate_partition_loss(self, model_prob, 
-                                 completed_child, 
-                                 partial_loss):
+    def map(self):
         """
-        This is pulled out mostly for easy debugging (see test_models),
-        but is reasonably handy for log_predict as well
+        Return the single model that is the maximum a posteriori model
+        given the sequence so far
         """
-        return log(2) - log_sum_exp([-model_prob, 
-                                        -completed_child - partial_loss])		
+        # TODO: break ties?
+        return max(self.models, key=lambda m: self.models[m])
 
 
 class KT(Model):
@@ -517,6 +493,38 @@ class KT(Model):
         #P(m+1,n) = (n+1/2)/(m+n+1)
         #-log(P)=-log(n_c/t_c)=-(log(n_c)-log(t_c))=log(t_c)-log(n_c)
         return self.log_predict(sym)
+
+class SAD(Model):
+    """
+    Sparse Adaptive Dirichlet Process
+
+    From M. Hutter via Mike. Currently copied directly
+    """
+    
+    def __init__(self, n):
+        self.n = n
+        self.counters = {}
+        self.sum_counts = 0
+        
+    def update(self, symb):
+        # TODO: check if defaultdict is faster
+        lp = self.log_predict(sym)
+        self.counts.setdefault(sym, 0)
+        self.counts[sym] += 1 
+        self.sum_counts += 1
+        return lp
+    
+    def log_predict(self, symbol):
+        # TODO: actually figure out what this does
+        
+        m = min(len(self.counts), self.sum_counts)
+        beta = m / (2 * math.log((self.sum_counts + 1) / m)) if self.sum_counts > 0 else 1
+
+        if symbol in self.counts:
+            return math.log(self.counts[symbol] / (self.sum_counts + beta))
+        else:
+            return math.log(beta / ((self.n - len(self.counts)) * (self.sum_counts + beta)))
+        
 
 if __name__ == "__main__":
     import doctest
