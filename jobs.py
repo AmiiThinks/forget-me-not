@@ -13,7 +13,7 @@ from local import base_dir, test_dir
 # I think it is easier to edit this file than to use command-line args for the jobs
 exp_params = {'base_dir': [base_dir],
               'platform': ['calgary'],
-              'protocol': ['book1'], #, 'pic', 'obj1', 'progc'],
+              'protocol': ['book1_book2_book1'], #, 'pic', 'obj1', 'progc'],
               'model': ['FastCTW', 'PTW:FastCTW', 'FMN:FastCTW', 'CTW_KT', 'KT', 'CTW:PTW'],
               #'depth': [32, 48, 64]
               }
@@ -39,6 +39,19 @@ class JobSet(Structure):
         for ps in param_sets:
             self.num_checked += 1
             infile = os.path.join(ps['base_dir'], ps['platform'], ps['protocol'])
+            
+            # check if we need to cat the file
+            if not os.path.exists(infile):
+                paths = [os.path.join(ps['base_dir'], ps['platform'], f) for f in ps['protocol'].split('_')]
+                extra = "\n".join(["echo \"Checking the existence of the file {}\"".format(ps['protocol']),
+                         "if [! -e {} ]".format(infile),
+                         "  then `cat {} > {}`".format(' '.join(paths), infile),
+                         "  echo \"...created\"",
+                         "fi"
+                         ])
+            else:
+                extra = ""
+            
             outfile = os.path.join(ps['base_dir'], ps['platform'], ps['protocol']+"_", ps['model'])
             name = "{}-{}".format(ps['model'], ps['protocol'])
             if self.safe_mode:
@@ -52,7 +65,7 @@ class JobSet(Structure):
                                                                         infile=infile, 
                                                                         outfile=outfile)              
         
-            self.submit_job(name, argstring)
+            self.submit_job(name, argstring, extra)
             self.num_submitted += 1
         print("Submitted {} jobs out of {}".format(self.num_submitted,
                                                    self.num_checked))
@@ -66,7 +79,7 @@ class JobSet(Structure):
         return "_".join([filename, clean_string(kwargs)])
         
                
-    def submit_job(self, filename, argstring):
+    def submit_job(self, filename, argstring, extra=None):
         """
         Submit specific experiment to the pbs experiment queue
         Save the submission file with the jobid
@@ -74,7 +87,7 @@ class JobSet(Structure):
         If debug is on, print job command rather than submitting it.
         If run_now is on, run the experiment directly.
         """
-        sh = self.pbs_template(filename, argstring)
+        sh = self.pbs_template(filename, argstring, extra)
         tmpfile = os.path.join(self.log_dir, filename)
         print("Scheduling {} ... ".format(filename), end=""); sys.stdout.flush()
     
@@ -95,7 +108,7 @@ class JobSet(Structure):
         if self.run_now:
             print("Running experiment")
             try:
-                import z
+                import mike.z as z
                 z.__main__(argstring.split())
             except Exception as e:
                 print("Problem with experiment: {}".format(e))
@@ -106,7 +119,7 @@ class JobSet(Structure):
         return script_path
         
 
-    def pbs_template(self, filename, argstring):
+    def pbs_template(self, filename, argstring, extra=""):
         lines = ["#!/bin/sh",
                  "",
                  "#PBS -S /bin/sh",
@@ -117,11 +130,13 @@ class JobSet(Structure):
                  "#PBS -l nodes=1:ppn=1," #no comma here on purpose
                   "walltime={}:{}:00,mem=1gb".format(self.num_hours, self.num_minutes),
                  "",
+                 extra,
                  "cd $PBS_O_WORKDIR",
                  "echo \"Current working directory is `pwd`\"",
                  "echo \"Starting run at: `date`\"",
-                 "python z.py {}".format(argstring), 
+                 "pypy mike/z.py {}".format(argstring), 
                  "echo \"Completed run with exit code $? at: `date`\""]
+        
         return "\n".join(lines)
 
     

@@ -29,7 +29,6 @@ class EnvDir(namedtuple('EnvDir', 'dirname steps')):
         else:
             return self.dirname
 
-
 class Protocol():
     """
     Really lightweight object for handling conversions from lists to base_dir
@@ -55,6 +54,8 @@ class Protocol():
         >>> Protocol.get_protocol_parts('fred-12')
         [('fred', 12)]
         >>> Protocol.get_protocol_parts('fred-_jones-')
+        [('fred', 0), ('jones', 0)]
+        >>> Protocol.get_protocol_parts('fred_jones')
         [('fred', 0), ('jones', 0)]
         >>> Protocol.get_protocol_parts('fred-15_jones-12')
         [('fred', 15), ('jones', 12)]
@@ -128,6 +129,22 @@ class Protocol():
 
     def __str__(self):
         return '_'.join(self.data.fillna(0).apply(format_protocol, axis=1))
+
+
+
+class Chainer():
+    """
+    Another lightweight object for handling repeated presentation of files.
+    
+    Same format as protocol, but in this case only the last element should have a number, 
+    and that is the number of times to repeat the specified sequence of files
+    """
+    def __init__(self, *args, reps=1):
+        self.reps = reps
+        self.data = DataFrame(data=args, columns=['dirname'])
+        self.data['steps'] = 0
+        self.data
+
 
 
 class CoinFlip():
