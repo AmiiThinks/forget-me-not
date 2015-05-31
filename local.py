@@ -1,2 +1,2 @@
-base_dir = '/global/scratch/akoop/results'
+base_dir = '/home/akoop/results'
 test_dir = 'test'

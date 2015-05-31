@@ -9,12 +9,13 @@ This module file handles submitting experiments to Wesgrid
 '''
 from experiment import *
 from local import base_dir, test_dir
+import subprocess
 
 # I think it is easier to edit this file than to use command-line args for the jobs
 exp_params = {'base_dir': [base_dir],
               'platform': ['calgary'],
-              'protocol': ['book1_book2_book1'], #, 'pic', 'obj1', 'progc'],
-              'model': ['FastCTW', 'PTW:FastCTW', 'FMN:FastCTW', 'CTW_KT', 'KT', 'CTW:PTW'],
+              'protocol': ['pic', 'obj1', 'progc'],
+              'model': ['FastCTW', 'PTW_FastCTW', 'FMN_FastCTW', 'KT', 'CTW_PTW'],
               #'depth': [32, 48, 64]
               }
 
@@ -44,7 +45,7 @@ class JobSet(Structure):
             if not os.path.exists(infile):
                 paths = [os.path.join(ps['base_dir'], ps['platform'], f) for f in ps['protocol'].split('_')]
                 extra = "\n".join(["echo \"Checking the existence of the file {}\"".format(ps['protocol']),
-                         "if [! -e {} ]".format(infile),
+                         "if [ ! -e {} ]".format(infile),
                          "  then `cat {} > {}`".format(' '.join(paths), infile),
                          "  echo \"...created\"",
                          "fi"
@@ -53,7 +54,8 @@ class JobSet(Structure):
                 extra = ""
             
             outfile = os.path.join(ps['base_dir'], ps['platform'], ps['protocol']+"_", ps['model'])
-            name = "{}-{}".format(ps['model'], ps['protocol'])
+            os.makedirs(os.path.dirname(outfile), exist_ok=True)
+            name = "{1}-{0}".format(ps['model'], ps['protocol'])
             if self.safe_mode:
                 print("Checking if log file for {} exists...".format(name))
                 if os.path.exists(outfile):
@@ -63,7 +65,7 @@ class JobSet(Structure):
             # here is where we should loop over depth if CTW in model            
             argstring = "compress -m {model} {infile} {outfile}".format(model=ps['model'], 
                                                                         infile=infile, 
-                                                                        outfile=outfile)              
+                                                                        outfile='/dev/null')              
         
             self.submit_job(name, argstring, extra)
             self.num_submitted += 1
@@ -108,7 +110,7 @@ class JobSet(Structure):
         if self.run_now:
             print("Running experiment")
             try:
-                import mike.z as z
+                import z
                 z.__main__(argstring.split())
             except Exception as e:
                 print("Problem with experiment: {}".format(e))
@@ -128,13 +130,14 @@ class JobSet(Structure):
                  "#PBS -o {0}/{1}.$PBS_JOBID.log".format(self.log_dir, 
                                                          filename),
                  "#PBS -l nodes=1:ppn=1," #no comma here on purpose
-                  "walltime={}:{}:00,mem=1gb".format(self.num_hours, self.num_minutes),
+                  "walltime={}:{}:00,mem=2gb".format(self.num_hours, self.num_minutes),
                  "",
                  extra,
                  "cd $PBS_O_WORKDIR",
                  "echo \"Current working directory is `pwd`\"",
                  "echo \"Starting run at: `date`\"",
-                 "pypy mike/z.py {}".format(argstring), 
+                 "alias pypy=/home/akoop/pypy3-2.4-linux_x86_64-portable/bin/pypy3",
+                 "pypy z.py {}".format(argstring), 
                  "echo \"Completed run with exit code $? at: `date`\""]
         
         return "\n".join(lines)
