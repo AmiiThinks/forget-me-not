@@ -14,11 +14,13 @@ import subprocess
 # I think it is easier to edit this file than to use command-line args for the jobs
 exp_params = {'base_dir': [base_dir],
               'platform': ['calgary'],
-              'protocol': ['pic', 'obj1', 'progc'],
-              'model': ['FastCTW', 'PTW_FastCTW', 'FMN_FastCTW', 'KT', 'CTW_PTW'],
-              #'depth': [32, 48, 64]
+              'protocol': ['bib', 'book1', 'book2', 'geo', 'news', 'obj1', 'obj2', 
+                           'paper1', 'paper2', 'paper3', 'paper4', 'paper5', 'pic', 'progp', 'progl', 'progc'],
+              'model': ['FastCTW', 'PTW_FastCTW', 'FMN_FastCTW'],
               }
 
+depths = [16, 32, 48, 64] # for CTW
+min_partition_length = [1, 1024] # only for PTW
 
 class JobSet(Structure):
     #TODO: maybe this doesn't have to be a full-blown parsable structure
@@ -53,22 +55,47 @@ class JobSet(Structure):
             else:
                 extra = ""
             
-            outfile = os.path.join(ps['base_dir'], ps['platform'], ps['protocol']+"_", ps['model'])
-            os.makedirs(os.path.dirname(outfile), exist_ok=True)
-            name = "{1}-{0}".format(ps['model'], ps['protocol'])
-            if self.safe_mode:
-                print("Checking if log file for {} exists...".format(name))
-                if os.path.exists(outfile):
-                    print("already there, turn off safe mode to overwrite.")
-                    continue
+            
+            #outfile = os.path.join(ps['base_dir'], ps['platform'], ps['protocol']+"_", ps['model'])
+            #os.makedirs(os.path.dirname(outfile), exist_ok=True)
+            more = True
+            i = 0
+            name = '-'.join([ps['model'], ps['protocol']])
+            other = ''
+
+            while(more):
+                name = '-'.join([ps['model'], ps['protocol']])
+                other = ''
+                if 'TW' in ps['model']:
+                    if 'CTW' in ps['model']:
+                        try:
+                            name += '-{}'.format(depths[i])
+                            other += '-d {}'.format(depths[i])
+                        except IndexError:
+                            more = False
+                    if 'PTW' in ps['model']:
+                        try:
+                            name += '-{}'.format(min_partition_length[i])
+                            other += '-n {}'.format(min_partition_length[i])
+                        except IndexError:
+                            more = False
+                else:
+                    more = False
+                i += 1
+                #if self.safe_mode:
+                 #   print("Checking if log file for {} exists...".format(name))
+                    #if os.path.exists(outfile):
+                    #    print("already there, turn off safe mode to overwrite.")
+                    #    continue
                 
-            # here is where we should loop over depth if CTW in model            
-            argstring = "compress -m {model} {infile} {outfile}".format(model=ps['model'], 
-                                                                        infile=infile, 
-                                                                        outfile='/dev/null')              
-        
-            self.submit_job(name, argstring, extra)
-            self.num_submitted += 1
+                # here is where we should loop over depth if CTW in model            
+                argstring = "compress -m {model}{other} {infile} {outfile}".format(model=ps['model'], 
+                                                                                infile=infile, 
+                                                                                outfile='/dev/null',
+                                                                                other=other) 
+                
+                self.submit_job(name, argstring, extra)
+                self.num_submitted += 1
         print("Submitted {} jobs out of {}".format(self.num_submitted,
                                                    self.num_checked))
     

@@ -6,6 +6,7 @@ Usage: z.py compress INFILE OUTFILE [-m MODEL] [-d DEPTH]
 Options:
 -m MODEL      Prediction model [default: CTW]
 -d DEPTH      Depth parameter used for CTW [default: 48]
+-l LENGTH     Min partition length used for PTL [default: 1]
 """
 
 import model

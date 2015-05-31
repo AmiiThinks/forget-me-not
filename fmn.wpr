@@ -19,6 +19,9 @@ proj.file-list = [loc('datasets.py'),
                   loc('test_models.py'),
                   loc('test_ptl.py')]
 proj.file-type = 'shared'
+proj.launch-config = {loc('jobs.py'): ('project',
+                                       (u'--debug --log_name logs',
+        ''))}
 testing.auto-test-file-specs = (('glob',
                                  'test_'),)
 testing.test-framework = {None: 'nose'}
