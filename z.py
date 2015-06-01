@@ -45,13 +45,15 @@ if __name__ == "__main__":
     args = docopt(__doc__)
 
     depth = int(args['-d'])
+    min_length = int(args['-i'])
     
     if args['-m'] == "CTW":
         probmodel = model.CTW(depth)
     elif args['-m'] == "FastCTW":
         probmodel = modelfast.CTW_KT(depth)
     elif args['-m'] == "PTW_FastCTW":
-        probmodel = model.CommonHistory(lambda history: model.PTW(lambda: modelfast.CTW_KT(depth, history = history)))
+        probmodel = model.CommonHistory(lambda history: model.PTW(lambda: modelfast.CTW_KT(depth, history = history),
+                                                                  min_partition_length=min_length))
     elif args['-m'] == "FMN_FastCTW":
         probmodel = model.CommonHistory(lambda history: model.FMN(lambda: modelfast.CTW_KT(depth, history = history)))
     elif args['-m'] == "CTW_KT":
@@ -59,15 +61,16 @@ if __name__ == "__main__":
     elif args['-m'] == "KT":
         probmodel = model.KT()
     elif args['-m'] == "PTW":
-        probmodel = model.PTW()
+        probmodel = model.PTW(min_partition_length=min_length)
     elif args['-m'] == "FMN":
         probmodel = model.FMN()
     elif args['-m'] == "PTW_CTW":
-        probmodel = model.CommonHistory(lambda history: model.PTW(lambda: model.CTW(depth, history = history)))
+        probmodel = model.CommonHistory(lambda history: model.PTW(lambda: model.CTW(depth, history = history), 
+                                                                  min_partition_length=min_length))
     elif args['-m'] == "FMN_CTW":
         probmodel = model.CommonHistory(lambda history: model.FMN(lambda: model.CTW(depth, history = history)))
     elif args['-m'] == "CTW_PTW":
-        probmodel = model.CTW(depth, lambda: model.PTW())
+        probmodel = model.CTW(depth, lambda: model.PTW(min_partition_length=min_length))
     else:
         raise Error()
 

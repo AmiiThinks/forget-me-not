@@ -70,13 +70,13 @@ class JobSet(Structure):
                     if 'CTW' in ps['model']:
                         try:
                             name += '-{}'.format(depths[i])
-                            other += '-d {}'.format(depths[i])
+                            other += ' -d {}'.format(depths[i])
                         except IndexError:
                             more = False
                     if 'PTW' in ps['model']:
                         try:
                             name += '-{}'.format(min_partition_length[i])
-                            other += '-n {}'.format(min_partition_length[i])
+                            other += ' -n {}'.format(min_partition_length[i])
                         except IndexError:
                             more = False
                 else:
