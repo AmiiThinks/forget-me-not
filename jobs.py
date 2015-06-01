@@ -20,8 +20,6 @@ exp_params = {'base_dir': [base_dir],
               'depth': [16, 32, 48, 64]
               }
 
-min_partition_length = [1, 1024] # only for PTW
-
 class JobSet(Structure):
     #TODO: maybe this doesn't have to be a full-blown parsable structure
     _fields = [Dir('log_name', required=True, keyword=False, default='logs'),
@@ -60,35 +58,20 @@ class JobSet(Structure):
             #os.makedirs(os.path.dirname(outfile), exist_ok=True)
             more = True
             i = 0
-            other = ''
-
-            while(more):
-                name = '-'.join([ps['protocol'], ps['model'], str(ps['depth'])])
-                other = ''
-                if 'PTW' in ps['model']:
-                    try:
-                        name += '-{}'.format(min_partition_length[i])
-                        other += ' -n {}'.format(min_partition_length[i])
-                    except IndexError:
-                        break
-                else:
-                    more = False
-                i += 1
-                #if self.safe_mode:
-                 #   print("Checking if log file for {} exists...".format(name))
-                    #if os.path.exists(outfile):
-                    #    print("already there, turn off safe mode to overwrite.")
-                    #    continue
+            name = '-'.join([ps['protocol'], ps['model'], str(ps['depth'])])
+            #if self.safe_mode:
+            #   print("Checking if log file for {} exists...".format(name))
+            #if os.path.exists(outfile):
+            #    print("already there, turn off safe mode to overwrite.")
+            #    continue
                 
-                # here is where we should loop over depth if CTW in model            
-                argstring = "compress -m {model}{other} -d {depth} {infile} {outfile}".format(model=ps['model'], 
-                                                                                infile=infile,
+            argstring = "compress -m {model} -d {depth} {infile} {outfile}".format(model=ps['model'], 
+                                                                                          infile=infile,
                                                                                 depth=ps['depth'],
-                                                                                outfile='/dev/null',
-                                                                                other=other) 
+                                                                                outfile='/dev/null') 
                 
-                self.submit_job(name, argstring, extra)
-                self.num_submitted += 1
+            self.submit_job(name, argstring, extra)
+            self.num_submitted += 1
         print("Submitted {} jobs out of {}".format(self.num_submitted,
                                                    self.num_checked))
     
