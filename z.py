@@ -6,7 +6,6 @@ Usage: z.py compress INFILE OUTFILE [-m MODEL] [-d DEPTH]
 Options:
 -m MODEL      Prediction model [default: CTW]
 -d DEPTH      Depth parameter used for CTW [default: 48]
--l LENGTH     Min partition length used for PTL [default: 1]
 """
 
 import model
@@ -45,15 +44,13 @@ if __name__ == "__main__":
     args = docopt(__doc__)
 
     depth = int(args['-d'])
-    min_length = int(args['-l'])
     
     if args['-m'] == "CTW":
         probmodel = model.CTW(depth)
     elif args['-m'] == "FastCTW":
         probmodel = modelfast.CTW_KT(depth)
     elif args['-m'] == "PTW_FastCTW":
-        probmodel = model.CommonHistory(lambda history: model.PTW(lambda: modelfast.CTW_KT(depth, history = history),
-                                                                  min_partition_length=min_length))
+        probmodel = model.CommonHistory(lambda history: model.PTW(lambda: modelfast.CTW_KT(depth, history = history)))
     elif args['-m'] == "FMN_FastCTW":
         probmodel = model.CommonHistory(lambda history: model.FMN(lambda: modelfast.CTW_KT(depth, history = history)))
     elif args['-m'] == "CTW_KT":
@@ -61,16 +58,15 @@ if __name__ == "__main__":
     elif args['-m'] == "KT":
         probmodel = model.KT()
     elif args['-m'] == "PTW":
-        probmodel = model.PTW(min_partition_length=min_length)
+        probmodel = model.PTW()
     elif args['-m'] == "FMN":
         probmodel = model.FMN()
     elif args['-m'] == "PTW_CTW":
-        probmodel = model.CommonHistory(lambda history: model.PTW(lambda: model.CTW(depth, history = history), 
-                                                                  min_partition_length=min_length))
+        probmodel = model.CommonHistory(lambda history: model.PTW(lambda: model.CTW(depth, history = history)))
     elif args['-m'] == "FMN_CTW":
         probmodel = model.CommonHistory(lambda history: model.FMN(lambda: model.CTW(depth, history = history)))
     elif args['-m'] == "CTW_PTW":
-        probmodel = model.CTW(depth, lambda: model.PTW(min_partition_length=min_length))
+        probmodel = model.CTW(depth, lambda: model.PTW())
     else:
         raise Error()
 
