@@ -45,7 +45,7 @@ if __name__ == "__main__":
     args = docopt(__doc__)
 
     depth = int(args['-d'])
-    min_length = int(args['-i'])
+    min_length = int(args['-l'])
     
     if args['-m'] == "CTW":
         probmodel = model.CTW(depth)
