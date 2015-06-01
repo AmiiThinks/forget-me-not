@@ -14,12 +14,12 @@ import subprocess
 # I think it is easier to edit this file than to use command-line args for the jobs
 exp_params = {'base_dir': [base_dir],
               'platform': ['calgary'],
-              'protocol': ['bib', 'book1', 'book2', 'geo', 'news', 'obj1', 'obj2', 
-                           'paper1', 'paper2', 'paper3', 'paper4', 'paper5', 'pic', 'progp', 'progl', 'progc'],
+              'protocol': ['bib'],#, 'book1', 'book2', 'geo', 'news', 'obj1', 'obj2', 
+                           #'paper1', 'paper2', 'paper3', 'paper4', 'paper5', 'pic', 'progp', 'progl', 'progc'],
               'model': ['FastCTW', 'PTW_FastCTW', 'FMN_FastCTW'],
+              'depth': [16, 32, 48, 64]
               }
 
-depths = [16, 32, 48, 64] # for CTW
 min_partition_length = [1, 1024] # only for PTW
 
 class JobSet(Structure):
@@ -60,25 +60,17 @@ class JobSet(Structure):
             #os.makedirs(os.path.dirname(outfile), exist_ok=True)
             more = True
             i = 0
-            name = '-'.join([ps['model'], ps['protocol']])
             other = ''
 
             while(more):
-                name = '-'.join([ps['model'], ps['protocol']])
+                name = '-'.join([ps['protocol'], ps['model'], str(ps['depth'])])
                 other = ''
-                if 'TW' in ps['model']:
-                    if 'CTW' in ps['model']:
-                        try:
-                            name += '-{}'.format(depths[i])
-                            other += ' -d {}'.format(depths[i])
-                        except IndexError:
-                            more = False
-                    if 'PTW' in ps['model']:
-                        try:
-                            name += '-{}'.format(min_partition_length[i])
-                            other += ' -n {}'.format(min_partition_length[i])
-                        except IndexError:
-                            more = False
+                if 'PTW' in ps['model']:
+                    try:
+                        name += '-{}'.format(min_partition_length[i])
+                        other += ' -n {}'.format(min_partition_length[i])
+                    except IndexError:
+                        break
                 else:
                     more = False
                 i += 1
@@ -89,8 +81,9 @@ class JobSet(Structure):
                     #    continue
                 
                 # here is where we should loop over depth if CTW in model            
-                argstring = "compress -m {model}{other} {infile} {outfile}".format(model=ps['model'], 
-                                                                                infile=infile, 
+                argstring = "compress -m {model}{other} -d {depth} {infile} {outfile}".format(model=ps['model'], 
+                                                                                infile=infile,
+                                                                                depth=ps['depth'],
                                                                                 outfile='/dev/null',
                                                                                 other=other) 
                 
@@ -157,7 +150,7 @@ class JobSet(Structure):
                  "#PBS -o {0}/{1}.$PBS_JOBID.log".format(self.log_dir, 
                                                          filename),
                  "#PBS -l nodes=1:ppn=1," #no comma here on purpose
-                  "walltime={}:{}:00,mem=2gb".format(self.num_hours, self.num_minutes),
+                  "walltime={}:{}:00,mem=6000mb".format(self.num_hours, self.num_minutes),
                  "",
                  extra,
                  "cd $PBS_O_WORKDIR",
