@@ -7,6 +7,12 @@ def logsumexp(*vals):
     shift = max(vals)
     return shift + math.log(sum((math.exp(v - shift) for v in vals)))
 
+def logsumexp2(v1, v2):
+    if v1 < v2:
+        return v2 + math.log(1.0 + math.exp(v1 - v2))
+    else:
+        return v1 + math.log(1.0 + math.exp(v2 - v1))
+
 
 class Model:
     """Probabilistic sequence prediction
@@ -278,8 +284,8 @@ class CTW(Model):
                 self.children_log_prob += child.update(symbol, weight, context)
 
                 # Update our log probability
-                self.log_prob = log_0_5 + logsumexp(self.base_log_prob, 
-                                                    self.children_log_prob)
+                self.log_prob = log_0_5 + logsumexp2(self.base_log_prob, 
+                                                     self.children_log_prob)
             else: 
                 # For leaf nodes, the probability comes just from the base model
                 self.log_prob = self.base_log_prob
@@ -287,8 +293,7 @@ class CTW(Model):
             return self.log_prob - orig_log_prob
             
         def log_predict(self, symbol, context):
-            base_log_prob = (self.base_log_prob + 
-                             self.base.update(symbol, weight))
+            base_log_prob = self.base_log_prob + self.base.log_predict(symbol)
 
             if context:
                 cnext = context.pop()
@@ -299,7 +304,7 @@ class CTW(Model):
                                      child.log_predict(symbol, context))
 
                 return (log_0_5 + 
-                        logsumexp(base_log_prob, children_log_prob) - 
+                        logsumexp2(base_log_prob, children_log_prob) - 
                         self.log_prob)
             else:
                 return base_log_prob - self.log_prob
@@ -438,8 +443,8 @@ class CTW_KT(Model):
                 self.children_log_prob += child.update(symbol, weight, context)
 
                 # Update our log probability
-                self.log_prob = log_0_5 + logsumexp(self.base_log_prob, 
-                                                    self.children_log_prob)
+                self.log_prob = log_0_5 + logsumexp2(self.base_log_prob, 
+                                                     self.children_log_prob)
             else: 
                 # For leaf nodes, the probability comes just from the base model
                 self.log_prob = self.base_log_prob
@@ -459,7 +464,7 @@ class CTW_KT(Model):
                                      child.log_predict(symbol, context))
 
                 return (log_0_5 + 
-                        logsumexp(base_log_prob, children_log_prob) - 
+                        logsumexp2(base_log_prob, children_log_prob) - 
                         self.log_prob)
             else:
                 return base_log_prob - self.log_prob
@@ -573,9 +578,9 @@ class PTW(Model):
 
                 # height correction
                 for i in range(self.height - self.right_child.height - 1):  
-                    right_log_prob = log_0_5 + logsumexp(self.right_child.base_log_prob, right_log_prob)
+                    right_log_prob = log_0_5 + logsumexp2(self.right_child.base_log_prob, right_log_prob)
                 
-                self.log_prob = log_0_5 + logsumexp(self.base_log_prob, 
+                self.log_prob = log_0_5 + logsumexp2(self.base_log_prob, 
                                                     self.left_log_prob + right_log_prob)
             # If this node is a leaf:
             #   - Log probability is just the base model's log probability
@@ -588,16 +593,16 @@ class PTW(Model):
             base_log_prob = self.base_log_prob + self.base.log_predict(symbol)
 
             if self.partition_is_complete():
-                return (log_0_5 + logsumexp(base_log_prob, self.log_prob), base_log_prob, self.height + 1)
+                return (log_0_5 + logsumexp2(base_log_prob, self.log_prob), base_log_prob, self.height + 1)
 
             if not self.right_child:
                 return base_log_prob, base_log_prob, self.height
             
             right_log_prob, right_base_log_prob, right_height = self.right_child.log_predict(symbol)
             for i in range(self.height - right_height - 1):
-                right_log_prob = log_0_5 + logsumexp(right_base_log_prob, right_log_prob)
+                right_log_prob = log_0_5 + logsumexp2(right_base_log_prob, right_log_prob)
 
-            return log_0_5 + logsumexp(base_log_prob, self.left_log_prob + right_log_prob), base_log_prob, self.height
+            return log_0_5 + logsumexp2(base_log_prob, self.left_log_prob + right_log_prob), base_log_prob, self.height
 
         def copy(self, root=False):
             cls = self.__class__
@@ -631,7 +636,7 @@ class PTW(Model):
 
         # Check if changing the height of the tree, and if so record the log probability adjustment
         if self.tree.partition_is_complete():
-            self.log_prob_adjustment += self.tree.log_prob - (log_0_5 + logsumexp(self.tree.base_log_prob, self.tree.log_prob))
+            self.log_prob_adjustment += self.tree.log_prob - (log_0_5 + logsumexp2(self.tree.base_log_prob, self.tree.log_prob))
                 
         # Update tree, adjust log probability
         self.tree.update(symbol, weight)
@@ -643,7 +648,7 @@ class PTW(Model):
         # Check if this symbol changes the height of the tree, and calculate the adjustment
         if self.tree.partition_is_complete():
             log_prob_adjustment = self.log_prob_adjustment + \
-              self.tree.log_prob - (log_0_5 + logsumexp(self.tree.base_log_prob, self.tree.log_prob))
+              self.tree.log_prob - (log_0_5 + logsumexp2(self.tree.base_log_prob, self.tree.log_prob))
         else:
             log_prob_adjustment = self.log_prob_adjustment
 
@@ -692,7 +697,7 @@ class PTWFixedLength(PTW):
         # Adjust log probability for the fixed height
         self.log_prob = self.tree.log_prob
         for i in range(self.height - self.tree.height):
-            self.log_prob = log_0_5 + logsumexp(self.tree.base_log_prob, self.log_prob)
+            self.log_prob = log_0_5 + logsumexp2(self.tree.base_log_prob, self.log_prob)
             
         return self.log_prob - orig_log_prob
     
@@ -700,24 +705,27 @@ class PTWFixedLength(PTW):
         log_prob, base_log_prob, height = self.tree.log_predict(symbol)
 
         for i in range(self.height - height):
-            log_prob = log_0_5 + logsumexp(base_log_prob, log_prob)
+            log_prob = log_0_5 + logsumexp2(base_log_prob, log_prob)
 
         return log_prob - self.log_prob
 
 def CommonHistory(Base):
     """Common History Model
 
-    This is a helper function that allows a single common history to be shared across many models.  The idea
-    is to pass it a factory function that returns the model to use.  The factory takes a list as an argument
-    which can then be used by 
+    This is a helper function that allows a single common history to be shared
+    across many models.  The idea is to pass it a factory function that returns
+    the model to use.  The factory takes a list as an argument which can then
+    be passed to the component models to give them a shared history. 
 
-    Base: a factory function that takes a list and returns a Model that uses that list for its history
+    Base: a factory function that takes a list and returns a Model that uses
+    that list for its history
 
-    # EXAMPLE: PTW model over CTW with KT estimators over base 10 digits at the leaves.  
-    # The CTW models will have a common history so the CTW model started after 4 symbols will start
-    # predicting from that context.
+    # EXAMPLE: PTW model over CTW with KT estimators over base 10 digits at the
+    # leaves. The CTW models will have a common history so the CTW model 
+    # started after 4 symbols will start predicting from that context.
     >>> model = CommmonHistory(lambda history: 
-        PTW(16, lambda: CTW(4, lambda: KT(alphabet = range(10)), history = history)))
+        PTW(16, lambda: CTW(4, lambda: KT(alphabet = range(10)), 
+                            history = history)))
     """
     history = []
     model = Base(history)
@@ -731,9 +739,11 @@ def CommonHistory(Base):
     return model
     
 class LogStore:
-    """Stores a "logarithmic number" of objects.  Keeps more recently added objects.
+    """Stores a "logarithmic number" of objects.  Keeps more recently added 
+    objects.
 
-    The class is also indexable, with newer objects first and the oldest object last.
+    The class is also indexable, with newer objects first and the oldest 
+    object last.
     
     >>> s = LogStore()
     >>> for i in range(16):
@@ -759,7 +769,10 @@ class LogStore:
 
     def __getitem__(self, i):
         return self._items[i]
-        
+
+    def lazy_add(self, x):
+        self.add(x())
+    
     def add(self, x):
         if not self._items:
             self._items.append(x)
@@ -777,20 +790,74 @@ class LogStore:
             self._items.append(x)
             self._save.append(True)
 
+
+class LogStoreUniform:
+    """Stores a "logarithmic number" of objects.  Uniformly distributed.
+
+    The class is also indexable, with newer objects first and the oldest 
+    object last.
+    
+    >>> s = LogStoreUniform()
+    >>> for i in range(16):
+    ...     s.add(i)
+    >>> list(s)
+    [12, 8, 4, 0]
+    >>> s[-1]
+    0
+    >>> s[0]
+    12
+    """
+    
+    def __init__(self):
+        self.items = []
+        self.gap = 1
+        self.index_to_remove = -1
+        self.num_to_skip = self.gap - 1
+
+    def __len__(self):
+        return len(self.items)
+
+    def __iter__(self):
+        for x in reversed(self.items):
+            yield x
+
+    def __getitem__(self, i):
+        return self.items[len(self.items) - i - 1]
+        
+    def add(self, x):
+        self.lazy_add(lambda: x)
+        
+    def lazy_add(self, x):
+        if self.num_to_skip:
+            self.num_to_skip -= 1
+            return
+
+        self.items.append(x())
+        if self.index_to_remove > 0: del self.items[self.index_to_remove]
+        self.index_to_remove += 1
+        if self.index_to_remove >= len(self.items):
+            self.gap *= 2
+            self.index_to_remove = 0
+
+        self.num_to_skip = self.gap - 1
+
 class FMN(PTW):
     """Forget Me Not
 
-    PTW-based model where the base model is an average over high probability models from the past.
+    PTW-based model where the base model is an average over high probability 
+    models from the past.
 
-    model_factory: a factory function that can be called to get an instance of a base-level 
-        sequence predictor [default: KTBinary]
+    model_factory: a factory function that can be called to get an instance of
+        a base-level sequence predictor [default: KTBinary]
     min_partition_length: the minimum length of partitions in the tree, always
         gets rounded up to a power of 2 [default: 1024]
-    model_store_factory: a factory function to get a set-like object for storing the models 
-        (must support the 'add' method and iteration) [default: LogStore]
+    model_store_factory: a factory function to get a set-like object for 
+        storing the models (must support a 'lazy_add' method and iteration) 
+        [default: LogStore]
     """
 
-    def __init__(self, model_factory = KTBinary, min_partition_length = 1024, model_store_factory = LogStore):
+    def __init__(self, model_factory = KTBinary, min_partition_length = 1024, 
+                 model_store_factory = LogStore):
         # Create the initial model store with just one model
         # We have to do this before initialize our super class, so that
         #   self.model_factory() will work
@@ -798,7 +865,8 @@ class FMN(PTW):
         self.models.add(model_factory())
 
         # Rest of the initalization
-        super().__init__(self.model_factory, min_partition_length = min_partition_length)
+        super().__init__(self.model_factory, 
+                         min_partition_length = min_partition_length)
         self.model_period = (1 << self.min_height)
         self.t = 0
 
@@ -810,7 +878,7 @@ class FMN(PTW):
 
         self.t += 1
         if self.t % self.model_period == 0:
-            self.models.add(self.map().map().copy())
+            self.models.lazy_add(lambda: self.map().map().copy())
 
         return rv
 
@@ -818,8 +886,8 @@ class FMN(PTW):
 class Factored(Model):
     """Factored model with independent models that repeat on a fixed period.
 
-    This is mainly for binary models over bytes where a separate model is used for
-    each bit position.
+    This is mainly for binary models over bytes where a separate model is used
+    for each bit position.
 
     # Examples
     >>> model = Factored([ KT() for i in range(8) ])
