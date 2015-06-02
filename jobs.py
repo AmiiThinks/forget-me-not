@@ -20,6 +20,44 @@ exp_params = {'base_dir': [base_dir],
               'depth': [16, 32, 48, 64]
               }
 
+def pull_stats_from_file(filename):
+    with open('logs/{}'.format(filename), 'r') as f:
+        stats = f.readlines()[-7:]
+        if 'Starting' in stats[-1]:
+            return {'flaked': True}
+        elif 'killed' in stats[-1]:
+            return {'killed': stats[-1].split(':')[-1].strip()}
+        data = {}
+        for s in stats:
+            try:
+                parts = s.split(':')
+                data[parts[0].strip()] = parts[1].split()[0]
+            except IndexError:
+                pass
+        return data
+
+def pull_params_from_name(filename):
+    data = {'filename': filename}
+    (data['protocol'], data['model'], depth, *parts) = filename.split('-')
+    data['depth'] = depth.split('.')[0]
+    return data
+    
+def get_all_logs():
+    data = {}
+    for f in os.listdir('logs'):
+        if '.log' in f:
+            name = f.split('.')[0]
+            params = pull_params_from_name(f)
+            params.update(pull_stats_from_file(f))
+            data[name] = Series(params)
+    return DataFrame(data)
+    
+def graph_results(data, protocol):
+    subset = data[data.protocol == protocol][['model', 'depth', 'Size']].convert_objects(convert_numeric=True)
+    subset.plot(x='depth', y='Size', label='model')
+    title('Compressed size of {} as a function of depth for each model type'.format(protocol))
+    
+
 class JobSet(Structure):
     #TODO: maybe this doesn't have to be a full-blown parsable structure
     _fields = [Dir('log_name', required=True, keyword=False, default='logs'),
