@@ -23,10 +23,12 @@ class Model:
 
     __slots__ = []
 
-    def update(self, symbol, weight=1.0):
+    def update(self, symbol, history=None, weight=1.0):
         """Updates the model with the symbol and returns the log probability
         of that symbol being next.
 
+        symbol: next symbol observed
+        history: history of symbols prior to this symbol
         weight: specifies how much weight to place on the symbol
                 [default: 1]
         """
@@ -34,35 +36,39 @@ class Model:
             'update() method must be defined for derived class, {}'
             .format(self.__class__.__name__))
 
-    def log_predict(self, symbol):
+    def log_predict(self, symbol, history=None):
         """Returns the log probability of observing the symbol next.
         """
         raise NotImplementedError(
             'log_predict() method must be defined for derived class, '
             '{}'.format(self.__class__.__name__))
 
-    def update_seq(self, seq, weight=1.0):
+    def update_seq(self, seq, history, weight=1.0):
         """Updates the model with an entire sequence of symbols.
         """
         rv = 0
         for symbol in seq:
-            rv += self.update(symbol, weight)
+            rv += self.update(symbol, history, weight)
+            history.append(symbol)
+        history[-len(seq):] = []
         return rv
 
-    def log_predict_seq(self, seq):
+    def log_predict_seq(self, seq, history):
         """Returns the log probability of observing an entire sequence of
         symbols. This is not properly Bayesian! It does not update the model
         between symbols.
         """
         rv = 0
         for symbol in seq:
-            rv += self.log_predict(symbol)
+            rv += self.log_predict(symbol, history)
+            history.append(symbol)
+        history[-len(seq):] = []
         return rv
 
-    def predict(self, symbol):
+    def predict(self, symbol, history):
         """Returns the probability of observing the symbol next.
         """
-        return math.exp(self.log_predict(symbol))
+        return math.exp(self.log_predict(symbol, history))
 
     def copy(self):
         """Create a deep copy of the model.
@@ -91,13 +97,13 @@ class KT(Model):
             self.counts = {a: 1.0/len(alphabet) for a in alphabet}
         self.sum_counts = sum(self.counts.values())
 
-    def update(self, symbol, weight=1.0):
-        rv = self.log_predict(symbol)
+    def update(self, symbol, history=None, weight=1.0):
+        rv = self.log_predict(symbol, history)
         self.counts[symbol] += weight
         self.sum_counts += weight
         return rv
 
-    def log_predict(self, symbol):
+    def log_predict(self, symbol, history=None):
         return math.log(self.counts[symbol] / self.sum_counts)
 
     def copy(self):
@@ -122,12 +128,12 @@ class KTBinary(Model):
         super().__init__()
         self.counts = [counts[0], counts[1]] if counts else [0.5, 0.5]
 
-    def update(self, symbol, weight=1.0):
-        rv = self.log_predict(symbol)
+    def update(self, symbol, history=None, weight=1.0):
+        rv = self.log_predict(symbol, history)
         self.counts[symbol] += weight
         return rv
 
-    def log_predict(self, symbol):
+    def log_predict(self, symbol, history=None):
         return math.log(self.counts[symbol] / (self.counts[0]+self.counts[1]))
 
     def copy(self):
@@ -152,14 +158,14 @@ class SAD(Model):
         self.counts = {}
         self.sum_counts = 0
 
-    def update(self, symbol, weight=1.0):
-        rv = self.log_predict(symbol)
+    def update(self, symbol, history=None, weight=1.0):
+        rv = self.log_predict(symbol, history)
         self.counts.setdefault(symbol, 0)
         self.counts[symbol] += weight
         self.sum_counts += weight
         return rv
 
-    def log_predict(self, symbol):
+    def log_predict(self, symbol, history=None):
         m = min(len(self.counts), self.sum_counts)
         if self.sum_counts > 0:
             beta = m / (2 * math.log((self.sum_counts + 1) / m))
@@ -195,17 +201,17 @@ class Averager(Model):
 
         self.log_prob = 0
 
-    def update(self, symbol, weight=1.0):
+    def update(self, symbol, history=None, weight=1.0):
         orig_log_prob = self.log_prob
 
         for m in self.models:
-            self.models[m] += m.update(symbol, weight)
+            self.models[m] += m.update(symbol, history, weight)
         self.log_prob = logsumexp(*self.models.values())
 
         return self.log_prob - orig_log_prob
 
-    def log_predict(self, symbol):
-        return logsumexp(*(m.log_predict(symbol) + lp
+    def log_predict(self, symbol, history=None):
+        return logsumexp(*(m.log_predict(symbol, history) + lp
                            for (m, lp) in self.models.items())) - self.log_prob
 
     def copy(self):
@@ -234,8 +240,6 @@ class CTW(Model):
     mkcontext: a function creating a context from a history [default: last
         depth symbols padded with 0s]
     binary_context: specifies whether the contexts are binary [default: True]
-    history: a history to use to form the context, if not provided it will
-        make its own [default: None]
     """
     class Node:
         """CTW Node
@@ -261,11 +265,11 @@ class CTW(Model):
             self.children = self._children_store()
             self._refcount = 1
 
-        def update(self, symbol, weight, context):
+        def update(self, symbol, history, weight, context):
             orig_log_prob = self.log_prob
 
             # Update base model
-            self.base_log_prob += self.base.update(symbol, weight)
+            self.base_log_prob += self.base.update(symbol, history, weight)
 
             if context:
                 # Get the next symbol and associated child
@@ -281,7 +285,7 @@ class CTW(Model):
                     child = self.children[cnext] = child.copy()
 
                 # Update the child node
-                self.children_log_prob += child.update(symbol, weight, context)
+                self.children_log_prob += child.update(symbol, history, weight, context)
 
                 # Update our log probability
                 self.log_prob = log_0_5 + logsumexp2(self.base_log_prob, 
@@ -292,8 +296,8 @@ class CTW(Model):
 
             return self.log_prob - orig_log_prob
             
-        def log_predict(self, symbol, context):
-            base_log_prob = self.base_log_prob + self.base.log_predict(symbol)
+        def log_predict(self, symbol, history, context):
+            base_log_prob = self.base_log_prob + self.base.log_predict(symbol, history)
 
             if context:
                 cnext = context.pop()
@@ -301,7 +305,7 @@ class CTW(Model):
                 if not child: child=self.children[cnext]=self.node_factory()
 
                 children_log_prob = (self.children_log_prob + 
-                                     child.log_predict(symbol, context))
+                                     child.log_predict(symbol, history, context))
 
                 return (log_0_5 + 
                         logsumexp2(base_log_prob, children_log_prob) - 
@@ -344,11 +348,9 @@ class CTW(Model):
         return [0] * padding + x[-self.depth:]
     
     def __init__(self, depth, model_factory=KTBinary, 
-                 mkcontext=None, binary_context=True, history=None):
+                 mkcontext=None, binary_context=True):
         super().__init__()
         self.depth = depth
-        self.history = [] if history is None else history
-        self._update_history = history is None
         self.model_factory = model_factory
         self.mkcontext = mkcontext if mkcontext else self._mkcontext 
 
@@ -365,24 +367,12 @@ class CTW(Model):
         self.size += 1
         return self.Node(self.model_factory(), self.node_factory)
 
-    def update(self, symbol, weight=1.0):
-        context = self.mkcontext(self.history)
-        if self._update_history: self.history.append(symbol)
-        return self.tree.update(symbol, weight, context)
+    def update(self, symbol, history, weight=1.0):
+        context = self.mkcontext(history)
+        return self.tree.update(symbol, history, weight, context)
 
-    def log_predict(self, symbol):
-        return self.tree.log_predict(symbol, self.mkcontext(self.history))
-
-    def log_predict_seq(self, seq):
-        """Predict a sequence being sure to update the context between 
-        predictions.
-        """
-        rv = 0
-        for symbol in seq:
-            rv += self.log_predict(symbol)
-            self.history.append(symbol)
-        self.history[-len(seq):] = []
-        return rv
+    def log_predict(self, symbol, history):
+        return self.tree.log_predict(symbol, history, self.mkcontext(history))
     
     def copy(self):
         cls = self.__class__
@@ -399,8 +389,6 @@ class CTW_KT(Model):
     in IEEE Transactions on Information Theory 41 (1995).
 
     depth: the depth of history CTW considers conditioning on
-    history: a history to use to form the context, if not provided it will 
-        make its own [default: None]
     """
     
     class Node:
@@ -453,7 +441,8 @@ class CTW_KT(Model):
             
         def log_predict(self, symbol, context):
             base_log_prob = (self.base_log_prob + 
-                             self.base.update(symbol, weight))
+                             math.log(self.base_counts[symbol] /
+                                      (self.base_counts[0] + self.base_counts[1])))
 
             if context:
                 cnext = context.pop()
@@ -492,29 +481,18 @@ class CTW_KT(Model):
         padding = self.depth - len(x)
         return [0] * padding + x[-self.depth:]
     
-    def __init__(self, depth, history=None):
+    def __init__(self, depth):
         super().__init__()
         self.depth = depth
-        self.history = [] if history is None else history
-        self._update_history = history is None
         self.tree = self.Node()
 
-    def update(self, symbol, weight=1.0):
-        context = self._mkcontext(self.history)
-        if self._update_history: self.history.append(symbol)
+    def update(self, symbol, history, weight=1.0):
+        context = self._mkcontext(history)
         return self.tree.update(symbol, weight, context)
 
-    def log_predict(self, symbol):
-        return self.tree.log_predict(symbol, self._mkcontext(self.history))
+    def log_predict(self, symbol, history):
+        return self.tree.log_predict(symbol, self._mkcontext(history))
 
-    def log_predict_seq(self, seq):
-        rv = 0
-        for symbol in seq:
-            rv += self.log_predict(symbol)
-            self.history.append(symbol)
-        self.history[-len(seq):] = []
-        return rv
-    
     def copy(self):
         cls = self.__class__
         r = cls.__new__(cls)
@@ -554,7 +532,7 @@ class PTW(Model):
             """
             return (self.count >> self.height) > 0
 
-        def update(self, symbol, weight):
+        def update(self, symbol, history, weight):
             # If partition is complete, then promote this node one level higher
             #   - new left child is the old node
             #   - new right child is a new node
@@ -564,7 +542,7 @@ class PTW(Model):
                 self.height += 1
 
             # Update the base model
-            self.base_log_prob += self.base.update(symbol, weight)
+            self.base_log_prob += self.base.update(symbol, history, weight)
 
             # If this node is not a leaf:
             #   - Update the right child
@@ -572,7 +550,7 @@ class PTW(Model):
             #     unrepresented nodes
             #   - Update own log probability
             if self.right_child:
-                self.right_child.update(symbol, weight)
+                self.right_child.update(symbol, history, weight)
 
                 right_log_prob = self.right_child.log_prob
 
@@ -589,8 +567,8 @@ class PTW(Model):
 
             self.count += 1
 
-        def log_predict(self, symbol):
-            base_log_prob = self.base_log_prob + self.base.log_predict(symbol)
+        def log_predict(self, symbol, history):
+            base_log_prob = self.base_log_prob + self.base.log_predict(symbol, history)
 
             if self.partition_is_complete():
                 return (log_0_5 + logsumexp2(base_log_prob, self.log_prob), base_log_prob, self.height + 1)
@@ -598,7 +576,7 @@ class PTW(Model):
             if not self.right_child:
                 return base_log_prob, base_log_prob, self.height
             
-            right_log_prob, right_base_log_prob, right_height = self.right_child.log_predict(symbol)
+            right_log_prob, right_base_log_prob, right_height = self.right_child.log_predict(symbol, history)
             for i in range(self.height - right_height - 1):
                 right_log_prob = log_0_5 + logsumexp2(right_base_log_prob, right_log_prob)
 
@@ -631,7 +609,7 @@ class PTW(Model):
     def node_factory(self):
         return self.Node(self.model_factory(), self.min_height, self.node_factory)
         
-    def update(self, symbol, weight=1.0):
+    def update(self, symbol, history=None, weight=1.0):
         orig_log_prob = self.log_prob
 
         # Check if changing the height of the tree, and if so record the log probability adjustment
@@ -639,12 +617,12 @@ class PTW(Model):
             self.log_prob_adjustment += self.tree.log_prob - (log_0_5 + logsumexp2(self.tree.base_log_prob, self.tree.log_prob))
                 
         # Update tree, adjust log probability
-        self.tree.update(symbol, weight)
+        self.tree.update(symbol, history, weight)
         self.log_prob = self.tree.log_prob + self.log_prob_adjustment
 
         return self.log_prob - orig_log_prob
 
-    def log_predict(self, symbol):
+    def log_predict(self, symbol, history):
         # Check if this symbol changes the height of the tree, and calculate the adjustment
         if self.tree.partition_is_complete():
             log_prob_adjustment = self.log_prob_adjustment + \
@@ -653,7 +631,7 @@ class PTW(Model):
             log_prob_adjustment = self.log_prob_adjustment
 
         # Get the tree prediction and adjust the log probability
-        log_prob, _, _ = self.tree.log_predict(symbol)
+        log_prob, _, _ = self.tree.log_predict(symbol, history)
 
         return log_prob + log_prob_adjustment - self.log_prob
 
@@ -670,6 +648,7 @@ class PTW(Model):
                 t = t.right_child
 
         return max(_nodes(), key = lambda x: x[0])[1]
+
 
 class PTWFixedLength(PTW):
     """Partition Tree Weighting
@@ -688,11 +667,11 @@ class PTWFixedLength(PTW):
         super().__init__(**kwargs)
         self.height = int(math.ceil(math.log(length, 2)))
 
-    def update(self, symbol, weight=1.0):
+    def update(self, symbol, history=None, weight=1.0):
         orig_log_prob = self.log_prob
         
         # Update tree
-        self.tree.update(symbol, weight)
+        self.tree.update(symbol, history, weight)
 
         # Adjust log probability for the fixed height
         self.log_prob = self.tree.log_prob
@@ -701,42 +680,14 @@ class PTWFixedLength(PTW):
             
         return self.log_prob - orig_log_prob
     
-    def log_predict(self, symbol):
-        log_prob, base_log_prob, height = self.tree.log_predict(symbol)
+    def log_predict(self, symbol, history):
+        log_prob, base_log_prob, height = self.tree.log_predict(symbol, history)
 
         for i in range(self.height - height):
             log_prob = log_0_5 + logsumexp2(base_log_prob, log_prob)
 
         return log_prob - self.log_prob
 
-def CommonHistory(Base):
-    """Common History Model
-
-    This is a helper function that allows a single common history to be shared
-    across many models.  The idea is to pass it a factory function that returns
-    the model to use.  The factory takes a list as an argument which can then
-    be passed to the component models to give them a shared history. 
-
-    Base: a factory function that takes a list and returns a Model that uses
-    that list for its history
-
-    # EXAMPLE: PTW model over CTW with KT estimators over base 10 digits at the
-    # leaves. The CTW models will have a common history so the CTW model 
-    # started after 4 symbols will start predicting from that context.
-    >>> model = CommmonHistory(lambda history: 
-        PTW(16, lambda: CTW(4, lambda: KT(alphabet = range(10)), 
-                            history = history)))
-    """
-    history = []
-    model = Base(history)
-
-    def update(symbol, weight = 1.0):
-        rv = model.__class__.update(model, symbol, weight)
-        history.append(symbol)
-        return rv
-    model.update = update
-
-    return model
     
 class LogStore:
     """Stores a "logarithmic number" of objects.  Keeps more recently added 
@@ -841,6 +792,7 @@ class LogStoreUniform:
 
         self.num_to_skip = self.gap - 1
 
+        
 class FMN(PTW):
     """Forget Me Not
 
@@ -873,8 +825,8 @@ class FMN(PTW):
     def model_factory(self):
         return Averager([ m.copy() for m in self.models ])
 
-    def update(self, symbol, weight = 1.0):
-        rv = super().update(symbol, weight)
+    def update(self, symbol, history=None, weight=1.0):
+        rv = super().update(symbol, history, weight)
 
         self.t += 1
         if self.t % self.model_period == 0:
@@ -882,7 +834,7 @@ class FMN(PTW):
 
         return rv
 
-    
+
 class Factored(Model):
     """Factored model with independent models that repeat on a fixed period.
 
@@ -893,30 +845,44 @@ class Factored(Model):
     >>> model = Factored([ KT() for i in range(8) ])
     >>> model = Factored([ CTW(16 + i) for i in range(8) ])
     """
-    __slots__ = ['factors', 'index']
+    __slots__ = ['factors']
     
     def __init__(self, factors):
         self.factors = factors
-        self.index = -1
 
-    def log_predict(self, symbol):
-        return self.factors[self.index].log_predict(symbol)
+    def log_predict(self, symbol, history):
+        index = len(history) % len(self.factors)
+        return self.factors[index].log_predict(symbol, history)
 
-    def update(self, symbol, weight = 1.0):
-        self.index = (self.index + 1) % len(self.factors)
-        return self.factors[self.index].update(symbol)
-
-    def log_predict_seq(self, seq):
-        rv = 0
-        index = self.index
-        for symbol in seq:
-            index = (index + 1) % len(self.factors)
-            rv += self.factors[index].log_predict(symbol)
-        return rv
+    def update(self, symbol, history, weight = 1.0):
+        index = len(history) % len(self.factors)
+        return self.factors[index].update(symbol, history)
 
     def copy(self):
         cls = self.__class__
         c = cls.__new__(cls)
         c.factors = [ m.copy() for m in self.factors ]
-        c.index = self.index
         return c
+
+
+class Dumb(Model):
+    """An impossible model that predicts all symbols with probability 1.
+
+    It is useful for models that whose predictions you aren't interested in.
+
+    Example: if sequences consist of alternating action, observation symbols.  
+    You may want a model of the observations given the history.  But you 
+    don't want this model to bother (or be confused by) predicting actions.
+    You can do this with Factored and Dumb.
+
+    >>> M = Factored((Dumb(), CTW_KT()))
+    """
+    
+    def log_predict(self, symbol, history):
+        return 0
+
+    def update(self, symbol, history, weight=1.0):
+        return 0
+    
+    
+    
