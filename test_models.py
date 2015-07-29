@@ -105,8 +105,8 @@ def test_prob_sum():
 def test_model_update():
     # the total loss having seen a symbol should equal the loss for predicting
     # the signal
-    pt = PTW(KT, depth=12)
-    mpt = model.PTW(12, model.KT)
+    pt = PTW(KT)
+    mpt = model.PTW(model.KT)
     for i in range(16):
         assert approx(mpt.log_predict(0), pt.log_predict(0))
         assert mpt.log_predict(0) == mpt.update(0)

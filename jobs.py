@@ -6,6 +6,10 @@ anna.koop@gmail.com
 A toolkit for running machine learning experiments on prosthetic limb data
 
 This module file handles submitting experiments to Wesgrid
+
+Usage: jobs.py --log_name LOG_DIR [OPTIONS]
+
+Edit this file to set the experiment params. See class definition for job-submission parameters.
 '''
 from experiment import *
 from local import base_dir, test_dir
@@ -53,13 +57,30 @@ def get_all_logs():
     return DataFrame(data)
     
 def graph_results(data, protocol):
+    import matplotlib.pyplot as plt
     subset = data[data.protocol == protocol][['model', 'depth', 'Size']].convert_objects(convert_numeric=True)
-    subset.plot(x='depth', y='Size', label='model')
-    title('Compressed size of {} as a function of depth for each model type'.format(protocol))
+    models = sorted(subset.model.unique())
+    depths = sorted(subset.depth.unique())
+    for m in models:
+        subset[subset.model==m].plot(x='depth', y='Size', label=m, xticks=depths)
+    plt.legend()
+    plt.title('Compressed size of {} as a function of depth for each model type'.format(protocol))
     
 
 class JobSet(Structure):
-    #TODO: maybe this doesn't have to be a full-blown parsable structure
+    """
+    JobSet takes the dictionary of parameter sets defined above 
+    and parses them into a sequence of experiment.py calls.
+    
+    Usage: jobs.py --log_name DIRNAME [OPTIONS]
+    
+    ---log_name      The directory to store logs of the submission and output
+    ---debug         Do not call qsub, just print out command
+    ---run_now       Run the experiment directly (still submitting or not according to other parameters)
+    ---safe_mode     Do not overwrite files
+    ---num_minutes   Number of minutes to request
+    ---num_hours
+    """
     _fields = [Dir('log_name', required=True, keyword=False, default='logs'),
                Boolean('debug', default=True, transient=True),
                Boolean('run_now', default=False, transient=True),
@@ -171,7 +192,7 @@ class JobSet(Structure):
                  "#PBS -o {0}/{1}.$PBS_JOBID.log".format(self.log_dir, 
                                                          filename),
                  "#PBS -l nodes=1:ppn=1," #no comma here on purpose
-                  "walltime={}:{}:00,mem=6000mb".format(self.num_hours, self.num_minutes),
+                  "walltime={}:{}:00,mem=4000mb".format(self.num_hours, self.num_minutes),
                  "",
                  extra,
                  "cd $PBS_O_WORKDIR",
