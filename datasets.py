@@ -1,3 +1,18 @@
+'''
+BLINC Adaptive Prosthetics Toolkit
+- Bionic Limbs for Improved Natural Control, blinclab.ca
+anna.koop@gmail.com
+
+A toolkit for automating online learning experiments
+
+This defines the primitives that Structures can hold, that are parsable
+parameters.
+
+
+A Structure is an object that can construct (and reconstruct) itself from a 
+file string, command line arguments, and parameter dictionary. 
+'''
+
 import inspect
 import os
 import re
@@ -91,7 +106,8 @@ class Parsable(Parameter):
 
     def stringify(self, value, code='-', remove_name=False):
         """
-        Return an appropriately formatted string for your parameter settings.
+        Return an appropriately formatted string for your parameter settings,
+        given the value passed
         """
         if not isinstance(value, str):
             value = clean_string(value)
@@ -195,11 +211,14 @@ class Parsable(Parameter):
                     
         setattr(instance, self.name, val)
 
+
 class String(Parsable):
     _expected_type = str
+
     
 class Integer(Parsable):
     _expected_type = int
+
 
 class Float(Parsable):
     _expected_type = float
@@ -354,7 +373,7 @@ class Structure(metaclass=StructureMeta):
        - only one non-keyword non-positional argument can be recovered
        - does not included any transient parameters
 f
-    Inherited parameters are not stored as part of the dirstring, 
+    Inherited parameters are not stored as part of the immediate dirstring.
       - but if they are there it shouldn't cause problems
 
 

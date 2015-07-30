@@ -55,6 +55,14 @@ class ProtParam(Listable):
             setattr(instance, self.name, Protocol.from_list(val))
 
 class DataSplitter(Structure):
+    """
+    For splitting streams of data into disjoint sets for test/training cycles.
+    
+    split defines the type of split to do
+    half:     simply split the data at the midpoint
+    sample:   construct sequences that are nsample steps long 
+              separated by gap
+    """
     _fields = [Parsable('split', required=True),
                Integer('gap', required=False, default=150),
                Integer('nsample', required=False, default=100),
