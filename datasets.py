@@ -85,6 +85,13 @@ class Parsable(Parameter):
         super().__init__(name, kind=Parameter.POSITIONAL_OR_KEYWORD, 
                          default=default, annotation=self.kwargs)
 
+    def is_valid(self, value):
+        """
+        Return true if the passed value satisfies constraints on this
+        type of parsable. There are no constraints on the base parsable
+        """
+        return True
+
     def add_parser_arg(self, parser):
         """
         Add yourself to the parser that is passed, even if not included in the dirstring

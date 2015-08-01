@@ -1,0 +1,12 @@
+
+*.log
+
+*.tar
+
+*.wpu
+
+.ipynb_checkpoints/*
+
+__pycache__/*
+
+*.pyc
